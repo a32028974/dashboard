@@ -1,1 +1,306 @@
-!
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Óptica Cristal • Lista de trabajos</title>
+  <meta name="theme-color" content="#0b1220" />
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#0f172a; --muted:#334155; --text:#e5e7eb; --soft:#94a3b8; --primary:#22c55e;
+      --danger:#ef4444; --warn:#f59e0b; --ok:#10b981; --row:#0b1326; --rowAlt:#0c152c;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0}
+    body{background:var(--bg); color:var(--text); font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
+    .wrap{max-width:1200px; margin:0 auto; padding:16px}
+    header{display:grid; gap:12px; grid-template-columns:1fr; margin-bottom:12px}
+    .toolbar{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+    .card{background:var(--panel); border:1px solid #1e293b; border-radius:14px; padding:12px; box-shadow:0 2px 16px rgba(0,0,0,.25)}
+    input, select, button{background:#0b1326; border:1px solid #1f2a44; color:var(--text); border-radius:10px; padding:8px 10px; outline:none}
+    input::placeholder{color:#7085a3}
+    button{cursor:pointer}
+    button.primary{background:linear-gradient(180deg,#22c55e,#16a34a); border-color:#0f3b23; font-weight:600}
+    button.ghost{background:transparent}
+    .kpi{display:flex; gap:12px; align-items:center; color:var(--soft)}
+    .kpi b{color:var(--text)}
+
+    /* tabla */
+    .tableWrap{height: calc(100vh - 190px); min-height:360px; overflow:auto; border:1px solid #1e293b; border-radius:12px}
+    table{width:100%; border-collapse:separate; border-spacing:0}
+    thead th{position:sticky; top:0; background:#0a1222; z-index:2; text-align:left; padding:10px 8px; font-weight:600; font-size:12px; color:#9fb3d1; border-bottom:1px solid #1e293b}
+    tbody td{padding:10px 8px; border-bottom:1px solid #14223b; white-space:nowrap}
+    tbody tr:nth-child(odd){background:var(--row)}
+    tbody tr:nth-child(even){background:var(--rowAlt)}
+    .state{padding:.2em .6em; border-radius:999px; font-size:12px; border:1px solid #2b3855}
+    .state.OK{background:#0b2a1a; color:#86efac; border-color:#14532d}
+    .state.PEND{background:#2a130b; color:#fdba74; border-color:#7c2d12}
+    .state.LAB{background:#0b1f2a; color:#93c5fd; border-color:#1e3a8a}
+
+    .right{ text-align:right }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace }
+    .muted{ color: var(--soft) }
+    .pill{ background:#0b1326; border:1px solid #20314f; padding:.35em .7em; border-radius:999px }
+    .grow{ flex:1 }
+    .spacer{flex:1}
+
+    .footer{display:flex; gap:8px; align-items:center; justify-content:space-between; color:var(--soft); margin-top:10px}
+
+    .progress{display:none; gap:12px; align-items:center}
+    .progress.show{display:flex}
+    .dot{width:9px;height:9px;border-radius:50%;background:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+    .spinner{display:inline-block; width:16px; height:16px; border:2px solid #284064; border-top-color:#93c5fd; border-radius:50%; animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(1turn)}}
+
+    @media (min-width: 860px){
+      header{grid-template-columns: 1fr auto}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="card">
+        <div class="toolbar">
+          <strong style="font-size:18px">📋 Lista de trabajos</strong>
+          <span class="pill muted">scroll infinito</span>
+          <span class="spacer"></span>
+          <div class="kpi" id="kpi">
+            <span>Mostrando <b id="count">0</b> de <b id="total">—</b></span>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:8px">
+          <input id="q" class="grow" placeholder="Buscar por N° trabajo, DNI, nombre o detalle…" />
+          <select id="limit">
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+            <option value="1000">1000</option>
+          </select>
+          <button id="btnLoad" class="primary">Cargar</button>
+          <button id="btnClear" class="ghost">Limpiar</button>
+        </div>
+        <div id="progress" class="progress" style="margin-top:6px">
+          <span class="spinner"></span>
+          <span class="muted">Cargando…</span>
+        </div>
+      </div>
+
+      <div class="card" style="min-width:260px">
+        <div class="toolbar">
+          <label class="muted">Orden:</label>
+          <select id="sort">
+            <option value="fecha_desc">Fecha ↓ (recientes primero)</option>
+            <option value="fecha_asc">Fecha ↑ (antiguos primero)</option>
+            <option value="num_desc">N° trabajo ↓</option>
+            <option value="num_asc">N° trabajo ↑</option>
+          </select>
+          <span class="spacer"></span>
+          <button id="exportCsv" title="Exportar a CSV" class="ghost">⬇️ Exportar</button>
+        </div>
+        <small class="muted">Tip: podés escribir y presionar Enter para filtrar. Con el scroll se cargan más.</small>
+      </div>
+    </header>
+
+    <div class="tableWrap" id="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">Fecha</th>
+            <th style="width:110px">N°</th>
+            <th>Paciente</th>
+            <th style="width:120px">DNI</th>
+            <th style="width:120px">Teléfono</th>
+            <th>Armazón</th>
+            <th>Cristal</th>
+            <th class="right" style="width:110px">Total</th>
+            <th class="right" style="width:90px">Seña</th>
+            <th class="right" style="width:90px">Saldo</th>
+            <th style="width:110px">Estado</th>
+            <th style="width:110px">Retira</th>
+            <th style="width:110px">Vendedor</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div id="hint" class="muted">Desplazate para cargar más…</div>
+      <div id="pageInfo" class="muted"></div>
+    </div>
+  </div>
+
+<script type="module">
+/*****************************
+ * CONFIGURACIÓN API
+ *****************************/
+const API_URL = 'https://script.google.com/macros/s/AKfycby6SzAgXhtctDbYEGETB6Ku8X_atugp7Mld5QvimnDpXMmHU9IxW9XRqDkRI0rGONr85Q/exec';
+// Si tu Apps Script usa otra URL parámetro, ajustá los nombres de abajo en buildParams().
+
+/*****************************
+ * HELPERS
+ *****************************/
+const $ = (id) => document.getElementById(id);
+const fmtMoney = (n) => (n==null||n==='')? '' : new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(Number(n)).replace("ARS","$ ");
+const toNum = (v) => { const n = Number(String(v).replace(/[^0-9.-]/g,'')); return Number.isFinite(n)?n:0 };
+const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms) } };
+
+/*****************************
+ * ESTADO
+ *****************************/
+let state = {
+  items: [],
+  total: 0,
+  page: 0,
+  pageSize: 100,
+  query: '',
+  sort: 'fecha_desc',
+  loading: false,
+  eof: false,
+};
+
+/*****************************
+ * API CLIENT (ajustá a tu Apps Script)
+ *****************************/
+function buildParams({limit, page, q, sort}){
+  // Ajustá los nombres a tu doGet: action=listarTrabajos, limit, page, q, sort
+  const params = new URLSearchParams();
+  params.set('action','listarTrabajos');
+  params.set('limit', String(limit));
+  params.set('page', String(page));
+  if (q) params.set('q', q);
+  if (sort) params.set('sort', sort);
+  return params;
+}
+
+async function fetchTrabajos({append=false}={}){
+  if (state.loading || state.eof) return;
+  state.loading = true; toggleProgress(true);
+  try{
+    const params = buildParams({limit: state.pageSize, page: state.page, q: state.query, sort: state.sort});
+    const url = API_URL + '?' + params.toString();
+    const res = await fetch(url, { method:'GET', redirect:'follow' });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    // Se espera un JSON con: { ok:true, total:number, items:[ {...} ] }
+    const items = Array.isArray(data.items) ? data.items : [];
+    state.total = Number(data.total ?? items.length);
+    if (!append) state.items = [];
+    state.items = append ? state.items.concat(items) : items;
+    if(items.length < state.pageSize) state.eof = true; // no hay más
+    render();
+  }catch(err){
+    console.error(err);
+    alert('No pude cargar los trabajos. Ajustá los parámetros de la API si es necesario.');
+  }finally{
+    state.loading = false; toggleProgress(false);
+  }
+}
+
+/*****************************
+ * RENDER
+ *****************************/
+function render(){
+  const tbody = $('tbody');
+  tbody.innerHTML = '';
+  for(const it of state.items){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${safe(it.fecha || it.fecha_encarga)}</td>
+      <td class="mono">${safe(it.nro || it.numero || it.nro_trabajo)}</td>
+      <td>${safe(it.nombre || it.paciente)}</td>
+      <td class="mono">${safe(it.dni)}</td>
+      <td class="mono">${safe(it.telefono || it.tel)}</td>
+      <td>${safe(it.detalle_armazon || it.armazon_detalle || it.armazon)}</td>
+      <td>${safe(it.cristal || it.tipo_cristal)}</td>
+      <td class="right mono">${fmtMoney(it.total)}</td>
+      <td class="right mono">${fmtMoney(it.sena || it.seña)}</td>
+      <td class="right mono">${fmtMoney(it.saldo)}</td>
+      <td><span class="state ${mapEstadoClass(it.estado)}">${safe(it.estado)}</span></td>
+      <td class="mono">${safe(it.fecha_retira || it.retira)}</td>
+      <td>${safe(it.vendedor || it.seller)}</td>
+    `;
+    tr.title = 'Click para copiar N° de trabajo';
+    tr.addEventListener('click', ()=> copyNumero(it));
+    tbody.appendChild(tr);
+  }
+  $('count').textContent = String(state.items.length);
+  $('total').textContent = state.total ? String(state.total) : '—';
+  $('pageInfo').textContent = state.eof ? 'Fin de resultados' : '';
+}
+
+function safe(v){ return (v??'').toString().trim(); }
+function mapEstadoClass(estado){
+  const s = (estado||'').toString().toUpperCase();
+  if (s.includes('LISTO') || s.includes('ENTREG')) return 'OK';
+  if (s.includes('LAB')) return 'LAB';
+  return 'PEND';
+}
+function copyNumero(it){
+  const nro = it.nro || it.numero || it.nro_trabajo || '';
+  if(!nro) return;
+  navigator.clipboard?.writeText(String(nro));
+}
+
+/*****************************
+ * UI EVENTS
+ *****************************/
+const toggleProgress = (on)=> $('progress').classList.toggle('show', !!on);
+
+$('btnLoad').addEventListener('click', ()=>{ resetAndLoad(); });
+$('btnClear').addEventListener('click', ()=>{ $('q').value=''; state.query=''; resetAndLoad(); });
+$('limit').addEventListener('change', ()=>{ state.pageSize = Number($('limit').value||100); resetAndLoad(); });
+$('sort').addEventListener('change', ()=>{ state.sort = $('sort').value; resetAndLoad(); });
+$('q').addEventListener('keyup', (e)=>{ if(e.key==='Enter'){ state.query=$('q').value.trim(); resetAndLoad(); } });
+
+function resetAndLoad(){
+  state.page = 0; state.eof=false; fetchTrabajos({append:false});
+}
+
+// scroll infinito
+$('scroller').addEventListener('scroll', debounce(()=>{
+  const el = $('scroller');
+  if (state.loading || state.eof) return;
+  const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 120;
+  if (nearBottom){ state.page++; fetchTrabajos({append:true}); }
+}, 100));
+
+// export CSV visible
+$('exportCsv').addEventListener('click', ()=>{
+  const headers = ['Fecha','N°','Paciente','DNI','Teléfono','Armazón','Cristal','Total','Seña','Saldo','Estado','Retira','Vendedor'];
+  const rows = state.items.map(it=>[
+    safe(it.fecha || it.fecha_encarga),
+    safe(it.nro || it.numero || it.nro_trabajo),
+    safe(it.nombre || it.paciente),
+    safe(it.dni),
+    safe(it.telefono || it.tel),
+    safe(it.detalle_armazon || it.armazon_detalle || it.armazon),
+    safe(it.cristal || it.tipo_cristal),
+    fmtMoney(it.total),
+    fmtMoney(it.sena || it.seña),
+    fmtMoney(it.saldo),
+    safe(it.estado),
+    safe(it.fecha_retira || it.retira),
+    safe(it.vendedor || it.seller),
+  ]);
+  const csv = [headers].concat(rows).map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'trabajos.csv'; a.click();
+  setTimeout(()=> URL.revokeObjectURL(url), 1500);
+});
+
+/*****************************
+ * ARRANQUE
+ *****************************/
+// valor inicial del select
+$('limit').value = '100';
+state.pageSize = 100;
+resetAndLoad();
+
+</script>
+</body>
+</html>
