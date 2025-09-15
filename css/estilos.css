@@ -1,1 +1,5 @@
-
+:root{
+  --bg:#0b1220; --panel:#0f172a; --muted:#334155; --text:#e5e7eb; --soft:#94a3b8; --primary:#22c55e;
+  --danger:#ef4444; --warn:#f59e0b; --ok:#10b981; --row:#0b1326; --rowAlt:#0c152c;
+}
+/* resto de estilos igual a tu <style>... */
