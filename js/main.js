@@ -4,7 +4,7 @@
 // ============================
 
 // PONÉ ACÁ tu URL /exec de la COPIA publicada:
-const API_URL = 'https://script.google.com/macros/s/AKfycbw2bdTcdrve8uUGHpSZRbQp7wcv3kUWVAOyvfgQ-okZytBFGYcj0DvwkKpqNvr0ks2UlQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxoQMhgtwTxMT0xRjlVMwLw63FZbs_dFLJyEWtl--oa4MQVN21LjirUJc9MYfgW20sZRg/exec';
 
 // ---- helpers
 const $ = (id) => document.getElementById(id);
