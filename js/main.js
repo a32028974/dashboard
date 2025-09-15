@@ -5,7 +5,7 @@
 
 console.log('[dashboard] boot');
 
-const API_URL = 'https://script.google.com/macros/s/AKfycby6SzAgXhtctDbYEGETB6Ku8X_atugp7Mld5QvimnDpXMmHU9IxW9XRqDkRI0rGONr85Q/exec'; // <- poné acá la URL /exec vigente
+const API_URL = 'https://script.google.com/macros/s/AKfycbzlfk45TlruCwMFobbtQ8E_BtiVXUvAGMqXA0OSLvFwgDZlXWHDCBunVJ38Nk-rOcGceg/exec'; // <- poné acá la URL /exec vigente
 
 // ---- helpers DOM
 const $ = (id) => document.getElementById(id);
