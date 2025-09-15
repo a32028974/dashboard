@@ -1,17 +1,23 @@
 // ============================
 // Óptica Cristal – Dashboard
-// main.js (mod con logs)
+// main.js (mapea total/seña/saldo + formato)
 // ============================
 
-console.log('[dashboard] boot');
+const API_URL = 'https://script.google.com/macros/s/AKfycbxcdtB24H9IXynNLkWVsMIP-C1IrmJ-FYYmF_KQHezSqbFp1SQF5BpKivZvKFkbBUW7Eg/exec'; // <-- poné la URL publicada de la copia
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbzlfk45TlruCwMFobbtQ8E_BtiVXUvAGMqXA0OSLvFwgDZlXWHDCBunVJ38Nk-rOcGceg/exec'; // <- poné acá la URL /exec vigente
-
-// ---- helpers DOM
+// ---- helpers
 const $ = (id) => document.getElementById(id);
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); } };
 const todayLocal = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
 const safe = (v) => (v??'').toString().trim();
+const money = (v) => {
+  const s = safe(v).replace(/\s/g,'');
+  if (!s) return '';
+  // acepta "$ 12.345,67", "12345.67", "12345", etc.
+  const num = Number(s.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',', '.'));
+  if (!isFinite(num)) return safe(v);
+  return num.toLocaleString('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:0 });
+};
 
 function parseDateDMY(str){
   const s = (str||'').trim(); if(!s) return null;
@@ -30,43 +36,29 @@ function daysUntil(dateStr){
 function isReady(estado){ return /\bLISTO\b/i.test(String(estado||'')); }
 
 // ---- estado
-let state = {
-  items: [],
-  total: 0,
-  limitLoaded: 0,
-  pageStep: 100,
-  query: '',
-  loading: false
-};
+let state = { items:[], total:0, limitLoaded:0, pageStep:100, query:'', loading:false };
 
-// ---- armado de URL (usa histUltimos/histBuscar como acordamos en GAS)
+// ---- URL
 function buildURL(){
-  if (!API_URL || !/^https?:\/\//.test(API_URL)) {
-    throw new Error('API_URL inválida o vacía');
-  }
   const qp = new URLSearchParams();
-  if (state.query) {
+  if(state.query){
     qp.set('histBuscar', state.query);
     qp.set('limit', String(state.limitLoaded||state.pageStep));
   } else {
     qp.set('histUltimos', String(state.limitLoaded||state.pageStep));
   }
-  const url = API_URL + '?' + qp.toString();
-  console.debug('[GET url]', url);
-  return url;
+  return API_URL + '?' + qp.toString();
 }
 
-// ---- fetch principal
+// ---- fetch
 async function fetchTrabajos(){
   if(state.loading) return;
   state.loading = true; toggleProgress(true);
   try{
     const url = buildURL();
     const res = await fetch(url, { method:'GET', cache:'no-store' });
-    console.debug('[HTTP]', res.status, res.statusText);
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
-    console.debug('[DATA len]', Array.isArray(data) ? data.length : 'no-array', data);
     const items = Array.isArray(data) ? data : (Array.isArray(data.items)?data.items:[]);
     state.items = items.map(mapFromAPI);
     state.total  = items.length;
@@ -74,13 +66,13 @@ async function fetchTrabajos(){
     render();
   }catch(err){
     console.error('[fetchTrabajos] error', err);
-    showHint('No pude cargar los trabajos. Revisá la consola (F12 → Consola/Red).');
+    $('hint').textContent = 'No pude cargar los trabajos. Revisá la consola.';
   }finally{
     state.loading = false; toggleProgress(false);
   }
 }
 
-// ---- mapeo desde API
+// ---- mapeo
 function mapFromAPI(it){
   return {
     estado: safe(it.estado),
@@ -92,9 +84,11 @@ function mapFromAPI(it){
     cristal:safe(it.cristal),
     n_armazon: safe(it.n_armazon),
     det_armazon: safe(it.det_armazon),
-    dist_focal: safe(it.dist_focal),
     vendedor: safe(it.vendedor),
     telefono: safe(it.telefono),
+    total: safe(it.total),
+    sena: safe(it.sena),
+    saldo: safe(it.saldo),
     pdf: safe(it.pdf),
     dLeft: daysUntil(it.retira),
     ready: isReady(it.estado)
@@ -116,7 +110,7 @@ function cmpDate(a,b){
   return da - db;
 }
 
-// ---- render + clases por estado/fecha
+// ---- render
 function rowClass(it){
   if(it.ready) return 'ready';
   const d = it.dLeft;
@@ -135,9 +129,7 @@ function badgeTexto(it){
 }
 
 function render(){
-  const tbody = $('tbody');
-  if (!tbody) { console.error('Falta <tbody id="tbody">'); return; }
-  tbody.innerHTML = '';
+  const tbody = $('tbody'); tbody.innerHTML = '';
   for(const it of state.items){
     const tr = document.createElement('tr');
     tr.className = rowClass(it);
@@ -150,15 +142,15 @@ function render(){
       <td class="mono">${safe(it.telefono)}</td>
       <td>${safe(it.det_armazon)}</td>
       <td>${safe(it.cristal)}</td>
-      <td class="right mono"></td>
-      <td class="right mono"></td>
-      <td class="right mono"></td>
+      <td class="right mono">${money(it.total)}</td>
+      <td class="right mono">${money(it.sena)}</td>
+      <td class="right mono">${money(it.saldo)}</td>
       <td><span class="state ${it.ready ? 'OK' : (it.dLeft<=1?'PEND':'LAB')}">${safe(it.estado|| (it.ready?'LISTO':'PEND.'))}</span></td>
       <td class="mono">${safe(it.retira)} ${badge?`<span class="pill" style="margin-left:6px">${badge}</span>`:''}</td>
       <td>${safe(it.vendedor)}</td>
     `;
     tr.title = 'Click para copiar N° de trabajo';
-    tr.addEventListener('click', ()=> copyNumero(it));
+    tr.addEventListener('click', ()=> navigator.clipboard?.writeText(String(it.numero||'')));
     tbody.appendChild(tr);
   }
   $('count').textContent = String(state.items.length);
@@ -166,54 +158,25 @@ function render(){
   $('pageInfo').textContent = `Cargados: ${state.limitLoaded}`;
 }
 
-function copyNumero(it){
-  const nro = it.numero || '';
-  if(!nro) return;
-  navigator.clipboard?.writeText(String(nro));
-}
-
+// ---- UI
 const toggleProgress = (on)=> $('progress').classList.toggle('show', !!on);
-const showHint = (msg)=> { const el=$('hint'); if(el) el.textContent = msg; };
 
-// ---- events
-window.addEventListener('error', (e)=>{
-  console.error('[window.onerror]', e.message || e);
-});
-
-$('btnLoad').addEventListener('click', ()=>{
-  state.query = $('q').value.trim();
-  resetAndLoad();
-});
-$('btnClear').addEventListener('click', ()=>{
-  $('q').value = '';
-  state.query = '';
-  resetAndLoad();
-});
-$('limit').addEventListener('change', ()=>{
-  state.pageStep = Number($('limit').value||100);
-  resetAndLoad();
-});
+$('btnLoad').addEventListener('click', ()=>{ state.query=$('q').value.trim(); resetAndLoad(); });
+$('btnClear').addEventListener('click', ()=>{ $('q').value=''; state.query=''; resetAndLoad(); });
+$('limit').addEventListener('change', ()=>{ state.pageStep = Number($('limit').value||100); resetAndLoad(); });
 $('sort').addEventListener('change', ()=>{ render(); });
 $('q').addEventListener('keyup', (e)=>{ if(e.key==='Enter'){ state.query=$('q').value.trim(); resetAndLoad(); } });
 
-function resetAndLoad(){
-  state.limitLoaded = state.pageStep;
-  fetchTrabajos();
-}
+function resetAndLoad(){ state.limitLoaded = state.pageStep; fetchTrabajos(); }
 
-// scroll infinito
 document.getElementById('scroller').addEventListener('scroll', debounce(()=>{
   const el = document.getElementById('scroller');
   if (state.loading) return;
   const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 120;
-  if (nearBottom){
-    state.limitLoaded += state.pageStep;
-    fetchTrabajos();
-  }
+  if (nearBottom){ state.limitLoaded += state.pageStep; fetchTrabajos(); }
 }, 120));
 
-// ---- boot
+// boot
 document.getElementById('limit').value = '100';
 state.pageStep = 100;
-console.log('[dashboard] init → resetAndLoad()');
 resetAndLoad();
