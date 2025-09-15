@@ -1,23 +1,16 @@
 // ============================
 // Óptica Cristal – Dashboard
-// main.js (mapea total/seña/saldo + formato)
+// main.js (consumo de histUltimos/histBuscar)
 // ============================
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbxcdtB24H9IXynNLkWVsMIP-C1IrmJ-FYYmF_KQHezSqbFp1SQF5BpKivZvKFkbBUW7Eg/exec'; // <-- poné la URL publicada de la copia
+// PONÉ ACÁ tu URL /exec de la COPIA publicada:
+const API_URL = 'https://script.google.com/macros/s/AKfycbw2bdTcdrve8uUGHpSZRbQp7wcv3kUWVAOyvfgQ-okZytBFGYcj0DvwkKpqNvr0ks2UlQ/exec';
 
 // ---- helpers
 const $ = (id) => document.getElementById(id);
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); } };
 const todayLocal = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
 const safe = (v) => (v??'').toString().trim();
-const money = (v) => {
-  const s = safe(v).replace(/\s/g,'');
-  if (!s) return '';
-  // acepta "$ 12.345,67", "12345.67", "12345", etc.
-  const num = Number(s.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',', '.'));
-  if (!isFinite(num)) return safe(v);
-  return num.toLocaleString('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:0 });
-};
 
 function parseDateDMY(str){
   const s = (str||'').trim(); if(!s) return null;
@@ -76,20 +69,22 @@ async function fetchTrabajos(){
 function mapFromAPI(it){
   return {
     estado: safe(it.estado),
-    fecha:  safe(it.fecha),
-    retira: safe(it.retira),
-    numero: safe(it.numero),
-    dni:    safe(it.dni),
-    nombre: safe(it.nombre),
-    cristal:safe(it.cristal),
-    n_armazon: safe(it.n_armazon),
-    det_armazon: safe(it.det_armazon),
-    vendedor: safe(it.vendedor),
-    telefono: safe(it.telefono),
-    total: safe(it.total),
-    sena: safe(it.sena),
-    saldo: safe(it.saldo),
-    pdf: safe(it.pdf),
+    fecha:  safe(it.fecha),           // FECHA QUE ENCARGA
+    retira: safe(it.retira),          // FECHA QUE RETIRA
+    numero: safe(it.numero),          // NUMERO DE TRABAJO
+    dni:    safe(it.dni),             // DOCUMENTO
+    nombre: safe(it.nombre),          // APELLIDO Y NOMBRE
+    cristal:safe(it.cristal),         // CRISTAL
+    vendedor: safe(it.vendedor),      // VENDEDOR
+    telefono: safe(it.telefono),      // TELEFONO
+
+    // opcionales (no están en tu hoja hoy)
+    det_armazon: safe(it.det_armazon || ''),
+    total: safe(it.total || ''),
+    sena:  safe(it.sena  || ''),
+    saldo: safe(it.saldo || ''),
+    pdf:   safe(it.pdf   || ''),
+
     dLeft: daysUntil(it.retira),
     ready: isReady(it.estado)
   };
@@ -110,7 +105,7 @@ function cmpDate(a,b){
   return da - db;
 }
 
-// ---- render
+// ---- render + semáforo por fecha/estado
 function rowClass(it){
   if(it.ready) return 'ready';
   const d = it.dLeft;
@@ -142,9 +137,9 @@ function render(){
       <td class="mono">${safe(it.telefono)}</td>
       <td>${safe(it.det_armazon)}</td>
       <td>${safe(it.cristal)}</td>
-      <td class="right mono">${money(it.total)}</td>
-      <td class="right mono">${money(it.sena)}</td>
-      <td class="right mono">${money(it.saldo)}</td>
+      <td class="right mono">${safe(it.total)}</td>
+      <td class="right mono">${safe(it.sena)}</td>
+      <td class="right mono">${safe(it.saldo)}</td>
       <td><span class="state ${it.ready ? 'OK' : (it.dLeft<=1?'PEND':'LAB')}">${safe(it.estado|| (it.ready?'LISTO':'PEND.'))}</span></td>
       <td class="mono">${safe(it.retira)} ${badge?`<span class="pill" style="margin-left:6px">${badge}</span>`:''}</td>
       <td>${safe(it.vendedor)}</td>
@@ -160,7 +155,6 @@ function render(){
 
 // ---- UI
 const toggleProgress = (on)=> $('progress').classList.toggle('show', !!on);
-
 $('btnLoad').addEventListener('click', ()=>{ state.query=$('q').value.trim(); resetAndLoad(); });
 $('btnClear').addEventListener('click', ()=>{ $('q').value=''; state.query=''; resetAndLoad(); });
 $('limit').addEventListener('change', ()=>{ state.pageStep = Number($('limit').value||100); resetAndLoad(); });
