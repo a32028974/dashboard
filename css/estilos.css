@@ -1,5 +1,162 @@
+/* ============================
+   Óptica Cristal – Dashboard
+   estilos.css
+   ============================ */
+
+/* --------- Variables --------- */
 :root{
-  --bg:#0b1220; --panel:#0f172a; --muted:#334155; --text:#e5e7eb; --soft:#94a3b8; --primary:#22c55e;
-  --danger:#ef4444; --warn:#f59e0b; --ok:#10b981; --row:#0b1326; --rowAlt:#0c152c;
+  --bg:#0b1220;         /* fondo general */
+  --panel:#0f172a;      /* tarjetas/paneles */
+  --muted:#334155;      /* bordes/labels */
+  --text:#e5e7eb;       /* texto */
+  --soft:#94a3b8;       /* texto secundario */
+  --primary:#22c55e;    /* botón principal */
+  --danger:#ef4444;
+  --warn:#f59e0b;
+  --ok:#10b981;
+  --row:#0b1326;        /* filas impares */
+  --rowAlt:#0c152c;     /* filas pares */
 }
-/* resto de estilos igual a tu <style>... */
+
+/* --------- Reset básico --------- */
+*{ box-sizing: border-box; }
+html,body{ height:100%; margin:0; }
+body{
+  background:var(--bg);
+  color:var(--text);
+  font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+}
+
+/* --------- Layout general --------- */
+.wrap{ max-width:1200px; margin:0 auto; padding:16px; }
+header{ display:grid; gap:12px; grid-template-columns:1fr; margin-bottom:12px; }
+
+.card{
+  background:var(--panel);
+  border:1px solid #1e293b;
+  border-radius:14px;
+  padding:12px;
+  box-shadow:0 2px 16px rgba(0,0,0,.25);
+}
+
+.toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+
+/* --------- Controles --------- */
+input, select, button{
+  background:#0b1326;
+  border:1px solid #1f2a44;
+  color:var(--text);
+  border-radius:10px;
+  padding:8px 10px;
+  outline:none;
+}
+input::placeholder{ color:#7085a3; }
+button{ cursor:pointer; }
+
+button.primary{
+  background:linear-gradient(180deg,#22c55e,#16a34a);
+  border-color:#0f3b23;
+  font-weight:600;
+}
+button.ghost{ background:transparent; }
+
+/* --------- Badges / utilidades --------- */
+.kpi{ display:flex; gap:12px; align-items:center; color:var(--soft); }
+.kpi b{ color:var(--text); }
+
+.pill{
+  background:#0b1326;
+  border:1px solid #20314f;
+  padding:.35em .7em;
+  border-radius:999px;
+}
+
+.muted{ color:var(--soft); }
+.right{ text-align:right; }
+.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+.grow{ flex:1; }
+.spacer{ flex:1; }
+
+/* --------- Progreso --------- */
+.progress{ display:none; gap:12px; align-items:center; }
+.progress.show{ display:flex; }
+.spinner{
+  display:inline-block;
+  width:16px; height:16px;
+  border:2px solid #284064;
+  border-top-color:#93c5fd;
+  border-radius:50%;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(1turn); } }
+
+/* --------- Tabla --------- */
+.tableWrap{
+  height: calc(100vh - 190px);
+  min-height:360px;
+  overflow:auto;
+  border:1px solid #1e293b;
+  border-radius:12px;
+}
+
+table{ width:100%; border-collapse:separate; border-spacing:0; }
+
+thead th{
+  position:sticky; top:0; z-index:2;
+  background:#0a1222;
+  text-align:left;
+  padding:10px 8px;
+  font-weight:600;
+  font-size:12px;
+  color:#9fb3d1;
+  border-bottom:1px solid #1e293b;
+}
+
+tbody td{
+  padding:10px 8px;
+  border-bottom:1px solid #14223b;
+  white-space:nowrap;
+}
+
+tbody tr:nth-child(odd){ background:var(--row); }
+tbody tr:nth-child(even){ background:var(--rowAlt); }
+
+/* Estado en pastilla */
+.state{
+  padding:.2em .6em;
+  border-radius:999px;
+  font-size:12px;
+  border:1px solid #2b3855;
+}
+.state.OK{   background:#0b2a1a; color:#86efac; border-color:#14532d; }
+.state.PEND{ background:#2a130b; color:#fdba74; border-color:#7c2d12; }
+.state.LAB{  background:#0b1f2a; color:#93c5fd; border-color:#1e3a8a; }
+
+/* --------- Semáforo por fecha/estado --------- */
+.tableWrap table tbody tr.ready{        /* LISTO */
+  background:#0b2a1a !important;
+}
+.tableWrap table tbody tr.alert-orange{ /* 2–3 días */
+  background:#2a1f0b !important;
+}
+.tableWrap table tbody tr.alert-red{    /* hoy/mañana/vencido */
+  background:#2a0b0b !important;
+}
+.tableWrap table tbody tr.ready td,
+.tableWrap table tbody tr.alert-orange td,
+.tableWrap table tbody tr.alert-red td{
+  border-bottom-color: rgba(255,255,255,.06);
+}
+
+/* --------- Footer --------- */
+.footer{
+  display:flex; gap:8px; align-items:center;
+  justify-content:space-between;
+  color:var(--soft);
+  margin-top:10px;
+}
+
+/* --------- Responsive --------- */
+@media (min-width: 860px){
+  header{ grid-template-columns: 1fr auto; }
+}
