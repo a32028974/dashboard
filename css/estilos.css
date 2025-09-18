@@ -154,29 +154,30 @@ tbody tr.gris td{
   header{ grid-template-columns: 1fr auto; }
 }
 
-/* ===== Tabla clara ===== */
-.tableWrap {
-  background: #fff;        /* fondo contenedor */
-  border: 1px solid #ccc;
+/* ===== Tabla clara (parche semáforo) ===== */
+.tableWrap { background:#fff; border:1px solid #ccc; }
+table { background:#fff; color:#000; }
+
+thead th{
+  background:#f2f2f2;
+  color:#000;
+  border-bottom:1px solid #ccc;
 }
 
-table {
-  background: #fff;
-  color: #000;
+/* Clave: que el <td> NO tenga fondo */
+tbody td{
+  color:#000;
+  border-bottom:1px solid #ddd;
+  background: transparent !important;
 }
 
-thead th {
-  background: #f2f2f2;     /* encabezado gris claro */
-  color: #000;
-  border-bottom: 1px solid #ccc;
-}
+/* Alternado base (lo pisa el semáforo cuando aplica) */
+tbody tr:nth-child(odd){  background:#fff; }
+tbody tr:nth-child(even){ background:#f9f9f9; }
 
-tbody td {
-  background: #fff;
-  color: #000;
-  border-bottom: 1px solid #ddd;
-}
-
-tbody tr:nth-child(odd) { background: #fff; }
-tbody tr:nth-child(even){ background: #f9f9f9; }
-
+/* Semáforo con mezcla pensada para fondo claro */
+tbody tr.verde   { background: color-mix(in oklab, var(--verde) 18%, #fff) !important; }
+tbody tr.celeste { background: color-mix(in oklab, var(--celeste) 18%, #fff) !important; }
+tbody tr.amarillo{ background: color-mix(in oklab, var(--amarillo) 22%, #fff) !important; }
+tbody tr.rojo    { background: color-mix(in oklab, var(--rojo) 22%, #fff) !important; }
+tbody tr.gris    { background: color-mix(in oklab, var(--gris) 16%, #fff) !important; }
