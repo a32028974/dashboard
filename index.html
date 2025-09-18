@@ -14,16 +14,17 @@
       <div class="card">
         <div class="toolbar">
           <img src="logo.png" alt="Óptica Cristal" style="height:28px;border-radius:4px" />
-          <strong style="font-size:18px">📋 Lista de trabajos</strong>
+          <strong style="font-size:18px">📋 Lista de trabajos v1</strong>
           <span class="pill muted">tablero semáforo</span>
           <span class="spacer"></span>
           <div class="kpi" id="kpi">
             <span>Mostrando <b id="count">0</b> de <b id="total">—</b></span>
           </div>
         </div>
+
         <div class="toolbar" style="margin-top:8px">
           <input id="q" class="grow" placeholder="Buscar por N° trabajo, DNI o nombre…" />
-          <select id="limit">
+          <select id="limit" title="Cantidad de recientes a mostrar (sin búsqueda)">
             <option value="100" selected>100</option>
             <option value="200">200</option>
             <option value="500">500</option>
@@ -32,6 +33,7 @@
           <button id="btnLoad" class="primary">Cargar</button>
           <button id="btnClear" class="ghost">Limpiar</button>
         </div>
+
         <div id="progress" class="progress" style="margin-top:6px">
           <span class="spinner"></span>
           <span class="muted">Cargando…</span>
@@ -52,7 +54,7 @@
           <span class="spacer"></span>
           <button id="exportCsv" class="ghost" title="Exportar CSV" disabled>⬇️ Exportar</button>
         </div>
-        <small class="muted">Tip: escribí y presioná Enter para filtrar. Con el scroll se cargan más.</small>
+        <small class="muted">Tip: sin búsqueda se ven los <b>últimos N</b> del Sheet; con búsqueda, se muestran todas las coincidencias.</small>
       </div>
     </header>
 
@@ -75,7 +77,7 @@
     </div>
 
     <div class="footer">
-      <div id="hint" class="muted">Desplazate para cargar más…</div>
+      <div id="hint" class="muted">Listo.</div>
       <div id="pageInfo" class="muted"></div>
     </div>
   </div>
