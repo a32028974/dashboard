@@ -5,50 +5,69 @@
 // <<< CAMBIAR SOLO ESTA LÍNEA SI TENÉS OTRO /exec >>>
 const API_URL = 'https://script.google.com/macros/s/AKfycbybza1V9Om8MHI04iFBF4XM8I6am4QG3QOSr6tPnXV3vJwx5FhAzD21Iy8z6FJ1-3v3SQ/exec';
 
+// ===== Helpers DOM / UI =====
 const $ = (id) => document.getElementById(id);
 const logUI = (msg) => { const el = $('hint'); if (el) el.textContent = msg; };
 const safe = (v) => (v ?? '').toString().trim();
 
+// ===== Fechas =====
 function todayLocal(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function fmtDMY(d){ const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); return `${dd}/${mm}/${d.getFullYear()}`; }
+
 function parseAnyToDate(s){
-  if (s instanceof Date && !isNaN(s)) return new Date(s.getTime());
+  if (s instanceof Date && !isNaN(s)) { const d=new Date(s.getTime()); d.setHours(0,0,0,0); return d; }
   if (typeof s === 'number'){ const d=new Date(s); if(!isNaN(d)) { d.setHours(0,0,0,0); return d; } }
   const str=safe(s); if(!str) return null;
+
+  // dd/mm/aa, dd-mm-aa, dd/mm/aaaa...
   const m=str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if(m){ let[,dd,mm,yy]=m; if(yy.length===2) yy='20'+yy; const d=new Date(+yy,+mm-1,+dd); d.setHours(0,0,0,0); return isNaN(d)?null:d; }
-  const d=new Date(str); if(!isNaN(d)) { d.setHours(0,0,0,0); return d; }
+  if(m){
+    let[,dd,mm,yy]=m;
+    if(yy.length===2) yy='20'+yy;
+    const d=new Date(+yy,+mm-1,+dd);
+    d.setHours(0,0,0,0);
+    return isNaN(d)?null:d;
+  }
+  // fallback Date()
+  const d=new Date(str);
+  if(!isNaN(d)){ d.setHours(0,0,0,0); return d; }
   return null;
 }
+
 function toDMY(s){ const d=parseAnyToDate(s); return d?fmtDMY(d):''; }
 function daysUntil(s){ const d=parseAnyToDate(s); if(!d) return Infinity; return Math.floor((d - todayLocal())/86400000); }
-function rowClass(it){
-  if (/\bLISTO\b/i.test(it.A)) return 'verde';
-  const d = it._dLeft;
-  if (!isFinite(d)) return 'gris';
-  if (d <= 0) return 'rojo';
-  if (d <= 2) return 'amarillo';
-  return 'celeste';
+
+// ===== Normalización texto =====
+const norm = (s)=> safe(s)
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // sin acentos
+  .toUpperCase();
+
+function isListo(estadoRaw){
+  const e = norm(estadoRaw);
+  // lista de variantes comunes
+  return /^LISTO\b/.test(e) || e.includes('ENTREGADO');
 }
 
-// Estado
+// ===== Estado global =====
 let state = { items: [], total: 0, page: 100, query: '' };
 
+// ===== Mapear registros a las columnas que usás en la tabla =====
+// C,B,D,F,G,K,AF,AG + A (estado)
 function normalizeRecord(r){
-  // C,B,D,F,G,K,AF,AG + A
-  const C  = toDMY(r.retira   ?? r.C  ?? r.c  ?? r.fechaRetira ?? '');
-  const B  = toDMY(r.fecha    ?? r.B  ?? r.b  ?? r.fechaEncargo ?? '');
-  const D  = safe(r.numero    ?? r.D  ?? r.d  ?? '');
-  const F  = safe(r.nombre    ?? r.F  ?? r.f  ?? '');
-  const G  = safe(r.cristal   ?? r.G  ?? r.g  ?? '');
-  const K  = safe(r.armazon   ?? r.K  ?? r.k  ?? r.detalle ?? '');
-  const AF = safe(r.vendedor  ?? r.AF ?? r.af ?? '');
-  const AG = safe(r.telefono  ?? r.AG ?? r.ag ?? r.tel ?? '');
-  const A  = safe(r.estado    ?? r.A  ?? r.a  ?? '');
+  const C  = toDMY(r.retira   ?? r.C  ?? r.c  ?? r.fechaRetira ?? r['Fecha retira'] ?? '');
+  const B  = toDMY(r.fecha    ?? r.B  ?? r.b  ?? r.fechaEncargo ?? r['Fecha encargo'] ?? '');
+  const D  = safe(r.numero    ?? r.D  ?? r.d  ?? r['N° Trabajo'] ?? r.num ?? '');
+  const F  = safe(r.nombre    ?? r.F  ?? r.f  ?? r['Apellido y Nombre'] ?? '');
+  const G  = safe(r.cristal   ?? r.G  ?? r.g  ?? r['Cristal'] ?? '');
+  const K  = safe(r.armazon   ?? r.K  ?? r.k  ?? r.detalle ?? r['Armazón'] ?? '');
+  const AF = safe(r.vendedor  ?? r.AF ?? r.af ?? r['Vendedor'] ?? '');
+  const AG = safe(r.telefono  ?? r.AG ?? r.ag ?? r.tel ?? r['Teléfono'] ?? '');
+  const A  = safe(r.estado    ?? r.A  ?? r.a  ?? r['Estado'] ?? '');
 
   return { A,B,C,D,F,G,K,AF,AG, _dLeft: daysUntil(C) };
 }
 
+// ===== Orden =====
 function cmpDateStr(a,b){
   const A = parseAnyToDate(a)?.getTime() ?? 9e15;
   const B = parseAnyToDate(b)?.getTime() ?? 9e15;
@@ -66,6 +85,25 @@ function sortItems(){
   state.items.sort(by);
 }
 
+// ===== Semáforo =====
+// Regla pedida:
+//  - ROJO si Retira es hoy/ayer/antes y NO está LISTO
+//  - VERDE si LISTO
+//  - AMARILLO si faltan ≤2 días
+//  - CELESTE si faltan >2 días
+//  - GRIS si no hay fecha
+function rowClass(it){
+  const dLeft = it._dLeft;              // días hasta "retira" (neg/0 = vencido/hoy)
+  const estado = it.A;
+
+  if (!isFinite(dLeft)) return 'gris';
+  if (isListo(estado))  return 'verde';
+  if (dLeft <= 0)       return 'rojo';
+  if (dLeft <= 2)       return 'amarillo';
+  return 'celeste';
+}
+
+// ===== Render =====
 function render(){
   const tbody = $('tbody'); if(!tbody) return;
   const q = $('q')?.value.trim().toUpperCase() || '';
@@ -86,23 +124,22 @@ function render(){
     </tr>
   `).join('') || `<tr><td colspan="8" class="empty">Sin resultados</td></tr>`;
 
-  $('count').textContent = String(filtered.length);
-  $('total').textContent = String(state.items.length);
-  $('pageInfo').textContent = `Cargados: ${state.page}`;
+  $('count') && ($('count').textContent = String(filtered.length));
+  $('total') && ($('total').textContent = String(state.items.length));
+  $('pageInfo') && ($('pageInfo').textContent = `Cargados: ${state.page}`);
 }
 
-// ---- FETCH con fallback ----
+// ===== FETCH con fallback =====
 async function fetchHistorial(limit, query){
   // 1) formato viejo: histUltimos / histBuscar
   const qp = new URLSearchParams();
   if (query) { qp.set('histBuscar', query); qp.set('limit', String(limit)); }
-  else { qp.set('histUltimos', String(limit)); }
+  else       { qp.set('histUltimos', String(limit)); }
   const url1 = `${API_URL}?${qp.toString()}`;
 
-  // 2) formato nuevo: action=tablero
+  // 2) formato nuevo: action=tablero (si tu Apps Script lo soporta)
   const url2 = `${API_URL}?action=tablero`;
 
-  // intentamos url1 -> si falla/JSON invalido -> url2
   try {
     logUI('Cargando… (formato historial)');
     const r1 = await fetch(url1, { cache:'no-store' });
@@ -111,7 +148,6 @@ async function fetchHistorial(limit, query){
       const j1 = JSON.parse(t1);
       const arr = Array.isArray(j1) ? j1 : (Array.isArray(j1.items) ? j1.items : []);
       if (arr.length) return arr;
-      // si vino vacío, probamos el tablero igual
       console.warn('Historial vacío, pruebo "tablero"');
     } catch(parseErr){
       console.warn('No pude parsear historial:', parseErr);
@@ -129,11 +165,13 @@ async function fetchHistorial(limit, query){
   }
 }
 
+// ===== Cargar =====
 async function cargar(){
   try{
     $('progress')?.classList.add('show');
     const q = $('q')?.value.trim() || '';
     const data = await fetchHistorial(state.page, q);
+
     state.items = data.map(normalizeRecord);
     sortItems();
     render();
@@ -146,20 +184,20 @@ async function cargar(){
   }
 }
 
-// Eventos
-$('btnLoad')?.addEventListener('click', cargar);
-$('btnClear')?.addEventListener('click', ()=>{ if($('q')) $('q').value=''; cargar(); });
-$('sort')?.addEventListener('change', ()=>{ sortItems(); render(); });
-$('limit')?.addEventListener('change', (e)=>{ state.page = Number(e.target.value||100); cargar(); });
-$('q')?.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cargar(); });
+// ===== Eventos =====
+$('btnLoad')  ?.addEventListener('click', cargar);
+$('btnClear') ?.addEventListener('click', ()=>{ const iq=$('q'); if(iq) iq.value=''; cargar(); });
+$('sort')     ?.addEventListener('change', ()=>{ sortItems(); render(); });
+$('limit')    ?.addEventListener('change', (e)=>{ state.page = Number(e.target.value||100); cargar(); });
+$('q')        ?.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cargar(); });
 
-// Auto-load al abrir
+// ===== Auto-load al abrir =====
 window.addEventListener('DOMContentLoaded', ()=>{
   state.page = Number($('limit')?.value || 100);
   logUI('Listo. Hacé clic en Cargar.');
-  // si querés auto-cargar, descomentá:
+  // Si querés auto-cargar al abrir, descomentá:
   // cargar();
 });
 
-// Exponer para debug rápido desde la consola
-window._debug = { cargar, fetchHistorial };
+// ===== Debug en consola =====
+window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord };
