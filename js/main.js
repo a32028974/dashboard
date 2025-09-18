@@ -1,13 +1,13 @@
 // ============================
-// Tablero semáforo + Auto-Refresh
+// Tablero semáforo + Auto-Refresh + Recientes
 // ============================
 
 // <<< CAMBIAR SOLO ESTA LÍNEA SI TENÉS OTRO /exec >>>
 const API_URL = 'https://script.google.com/macros/s/AKfycbybza1V9Om8MHI04iFBF4XM8I6am4QG3QOSr6tPnXV3vJwx5FhAzD21Iy8z6FJ1-3v3SQ/exec';
 
 // ===== Config de actualización en tiempo real =====
-const REFRESH_MS = 15000;         // intervalo base 15s
-const REFRESH_MAX_MS = 60000;     // backoff máx 60s
+const REFRESH_MS = 15000;     // 15s base
+const REFRESH_MAX_MS = 60000; // 60s máx en backoff
 
 // ===== Helpers DOM / UI =====
 const $ = (id) => document.getElementById(id);
@@ -65,9 +65,7 @@ let state = {
   backoff: REFRESH_MS,
   lastHash: ''
 };
-
-window._state = state; // <- para inspeccionarlo desde la consola
-
+window._state = state; // debug desde consola
 
 // ===== Mapear registros a columnas =====
 // C,B,D,F,G,K,AF,AG + A (estado)
@@ -94,14 +92,20 @@ function cmpDateStr(a,b){
   const B = parseAnyToDate(b)?.getTime() ?? 9e15;
   return A-B;
 }
+
+// ÚNICA función sortItems (no se redeclara)
 function sortItems(){
-  const mode = $('sort')?.value || 'retira_asc';
+  const mode = $('sort')?.value || 'recientes_desc';
+
   const by = {
-    retira_asc:  (a,b)=> cmpDateStr(a.C,b.C),
-    retira_desc: (a,b)=> cmpDateStr(b.C,a.C),
-    encargo_asc: (a,b)=> cmpDateStr(a.B,b.B),
-    encargo_desc:(a,b)=> cmpDateStr(b.B,a.B),
-  }[mode] || ((a,b)=> a._dLeft - b._dLeft);
+    recientes_desc: (a,b)=> (b._row||0) - (a._row||0), // más nuevos arriba
+    recientes_asc:  (a,b)=> (a._row||0) - (b._row||0),
+    retira_asc:     (a,b)=> cmpDateStr(a.C,b.C),
+    retira_desc:    (a,b)=> cmpDateStr(b.C,a.C),
+    encargo_asc:    (a,b)=> cmpDateStr(a.B,b.B),
+    encargo_desc:   (a,b)=> cmpDateStr(b.B,a.B),
+  }[mode] || ((a,b)=> (b._row||0) - (a._row||0));
+
   state.items.sort(by);
 }
 
@@ -119,21 +123,23 @@ function rowClass(it){
 
 // ===== Hash rápido del dataset para evitar re-render si no cambió =====
 function computeHash(arr){
-  // solo campos clave para estabilidad
-  let s = arr.map(x => `${x.C}|${x.B}|${x.D}|${x.F}|${x.G}|${x.K}|${x.AF}|${x.AG}|${x.A}`).join('||');
-  // djb2
+  let s = arr.map(x => `${x.C}|${x.B}|${x.D}|${x.F}|${x.G}|${x.K}|${x.AF}|${x.AG}|${x.A}|${x._row||''}`).join('||');
   let h = 5381;
   for (let i=0;i<s.length;i++) h = ((h<<5)+h) ^ s.charCodeAt(i);
   return (h>>>0).toString(36);
 }
 
 // ===== Render =====
-function render(){
-  const tbody = $('tbody'); if(!tbody) return;
+function getFiltered(){
   const q = $('q')?.value.trim().toUpperCase() || '';
-  const filtered = q
+  return q
     ? state.items.filter(x => (`${x.D} ${x.F} ${x.G} ${x.K} ${x.AF} ${x.AG}`).toUpperCase().includes(q))
     : state.items;
+}
+
+function render(){
+  const tbody = $('tbody'); if(!tbody) return;
+  const filtered = getFiltered();
 
   tbody.innerHTML = filtered.map(it => `
     <tr class="${rowClass(it)}">
@@ -151,9 +157,11 @@ function render(){
   $('count') && ($('count').textContent = String(filtered.length));
   $('total') && ($('total').textContent = String(state.items.length));
   $('pageInfo') && ($('pageInfo').textContent = `Cargados: ${state.page}`);
+  // habilitar export si hay datos
+  const btn = $('exportCsv'); if (btn) btn.disabled = filtered.length === 0;
 }
 
-// ---- FETCH preferente a "tablero" + recorte últimos N ----
+// ---- FETCH preferente a "tablero" + recorte últimos N (cuando no hay búsqueda) ----
 async function fetchHistorial(limit, query){
   const url = `${API_URL}?action=tablero`;
   logUI('Cargando… (tablero)');
@@ -163,48 +171,53 @@ async function fetchHistorial(limit, query){
   const total = arr.length;
 
   let list = arr;
-  let base = 0; // fila inicial (0-based) dentro del sheet para el slice
+  let base = 0; // índice inicial dentro del sheet (0-based)
 
-  // Filtro local por texto (si hay)
   const q = (query || '').trim();
   if (q) {
     const Q = q.toUpperCase();
     list = arr.filter(o => (
       `${o.numero ?? o.D ?? ''} ${o.nombre ?? o.F ?? ''} ${o.cristal ?? o.G ?? ''} ${o.armazon ?? o.K ?? ''} ${o.vendedor ?? o.AF ?? ''} ${o.telefono ?? o.AG ?? ''}`
     ).toUpperCase().includes(Q));
-    // cuando hay búsqueda no recortamos; si querés, cambiamos a list = list.slice(-limit);
   } else {
-    // SIN búsqueda: me quedo con las ÚLTIMAS N filas del sheet
     list = arr.slice(-Number(limit || 100));
-    base = total - list.length; // índice de la primera fila mostrada dentro del sheet
+    base = total - list.length;
   }
 
   return { list, base, total };
 }
 
-// ===== Cargar (manual o por auto-refresh) =====
+// ===== Aplicar datos (mapea, calcula hash y renderiza solo si cambia) =====
+function updateFrom(list, base, total){
+  const items = list.map((r, i) => {
+    const it = normalizeRecord(r);
+    it._row = base + i + 1; // fila 1-based del sheet
+    return it;
+  });
+
+  const hash = computeHash(items);
+  if (hash === state.lastHash) {
+    logUI(`Sin cambios. Reg: ${state.items.length}`);
+    return;
+  }
+
+  state.items = items;
+  state.total = total;
+  state.lastHash = hash;
+
+  sortItems();
+  render();
+  logUI(`OK. Registros: ${state.items.length} / Total hoja: ${total}`);
+}
+
+// ===== Cargar (manual) =====
 async function cargar(){
   try{
     $('progress')?.classList.add('show');
     const q = $('q')?.value.trim() || '';
-    const { list, base, total } = await fetchHistorial(state.page, q);
-
-    // mapeo y adjunto número de fila del sheet (_row = 1-based)
-    const items = list.map((r, i) => {
-      const it = normalizeRecord(r);
-      it._row = base + i + 1;
-      return it;
-    });
-
-    state.items = items;
-    state.total = total;
-
-    sortItems();
-    render();
-
-    logUI(q
-      ? `OK. Coincidencias: ${state.items.length} / Total: ${total}`
-      : `OK. Mostrando últimos ${state.page} de ${total} (recientes primero)`);
+    const res = await fetchHistorial(state.page, q);
+    window._lastData = res.list; // debug crudo
+    updateFrom(res.list, res.base, res.total);
   }catch(err){
     logUI(`Error: ${err.message}`);
     console.error(err);
@@ -213,39 +226,20 @@ async function cargar(){
   }
 }
 
-function sortItems(){
-  // si no hay selección, por defecto mostramos "recientes primero"
-  const mode = $('sort')?.value || 'recientes_desc';
-
-  const by = {
-    recientes_desc: (a,b)=> (b._row||0) - (a._row||0), // más nuevos arriba
-    recientes_asc:  (a,b)=> (a._row||0) - (b._row||0),
-    retira_asc:     (a,b)=> cmpDateStr(a.C,b.C),
-    retira_desc:    (a,b)=> cmpDateStr(b.C,a.C),
-    encargo_asc:    (a,b)=> cmpDateStr(a.B,b.B),
-    encargo_desc:   (a,b)=> cmpDateStr(b.B,a.B),
-  }[mode] || ((a,b)=> (b._row||0) - (a._row||0));
-
-  state.items.sort(by);
-}
-
 // ===== Auto-Refresh =====
 function scheduleNextRefresh(ok){
-  if (ok) state.backoff = REFRESH_MS;
-  else state.backoff = Math.min(REFRESH_MAX_MS, state.backoff * 2);
-
+  state.backoff = ok ? REFRESH_MS : Math.min(REFRESH_MAX_MS, state.backoff * 2);
   clearTimeout(state.timer);
   state.timer = setTimeout(tick, state.backoff);
 }
 
 async function tick(){
-  // no refrescar si la pestaña está oculta (ahorra cuotas)
   if (document.hidden) { scheduleNextRefresh(true); return; }
-
   try{
     const q = $('q')?.value.trim() || '';
-    const data = await fetchHistorial(state.page, q);
-    sortItemsFrom(data.map(normalizeRecord));
+    const res = await fetchHistorial(state.page, q);
+    window._lastData = res.list; // debug
+    updateFrom(res.list, res.base, res.total);
     scheduleNextRefresh(true);
   }catch(err){
     console.error('Auto-refresh error:', err);
@@ -260,13 +254,32 @@ function startAutoRefresh(){
   scheduleNextRefresh(true);
 }
 
-// Pausar cuando no está visible
 document.addEventListener('visibilitychange', ()=>{
-  if (document.hidden) {
-    clearTimeout(state.timer);
-  } else {
-    startAutoRefresh();
-  }
+  if (document.hidden) clearTimeout(state.timer);
+  else startAutoRefresh();
+});
+
+// ===== Export CSV de lo que se ve =====
+$('exportCsv')?.addEventListener('click', () => {
+  const rows = getFiltered();
+  if (!rows.length) return;
+
+  const header = ['Fecha retira','Fecha encargo','N° Trabajo','Apellido y Nombre','Cristal','Armazón','Vendedor','Teléfono'];
+  const csvRows = [
+    header.join(','),
+    ...rows.map(r => [
+      r.C, r.B, r.D, r.F, r.G, r.K, r.AF, r.AG
+    ].map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(','))
+  ];
+  const blob = new Blob([csvRows.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trabajos_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 });
 
 // ===== Eventos =====
@@ -280,9 +293,9 @@ $('q')        ?.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cargar(); }
 window.addEventListener('DOMContentLoaded', ()=>{
   state.page = Number($('limit')?.value || 100);
   logUI('Listo. Clic en Cargar o esperá la sincronización…');
-  cargar();             // primera carga
-  startAutoRefresh();   // y arranca el “tiempo real”
+  cargar();
+  startAutoRefresh();
 });
 
-// ===== Debug =====
-window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord, computeHash };
+// ===== Debug helpers =====
+window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord, computeHash, updateFrom, getFiltered };
