@@ -11,9 +11,14 @@
   --text:#e5e7eb;       /* texto */
   --soft:#94a3b8;       /* texto secundario */
   --primary:#22c55e;    /* botón principal */
-  --danger:#ef4444;
-  --warn:#f59e0b;
-  --ok:#10b981;
+
+  /* Semáforo */
+  --verde:#38c172;
+  --celeste:#00CFFF;
+  --amarillo:#FFD700;
+  --rojo:#FF4D4D;
+  --gris:#6b7280;
+
   --row:#0b1326;        /* filas impares */
   --rowAlt:#0c152c;     /* filas pares */
 }
@@ -121,30 +126,18 @@ tbody td{
 tbody tr:nth-child(odd){ background:var(--row); }
 tbody tr:nth-child(even){ background:var(--rowAlt); }
 
-/* Estado en pastilla */
-.state{
-  padding:.2em .6em;
-  border-radius:999px;
-  font-size:12px;
-  border:1px solid #2b3855;
-}
-.state.OK{   background:#0b2a1a; color:#86efac; border-color:#14532d; }
-.state.PEND{ background:#2a130b; color:#fdba74; border-color:#7c2d12; }
-.state.LAB{  background:#0b1f2a; color:#93c5fd; border-color:#1e3a8a; }
-
 /* --------- Semáforo por fecha/estado --------- */
-.tableWrap table tbody tr.ready{        /* LISTO */
-  background:#0b2a1a !important;
-}
-.tableWrap table tbody tr.alert-orange{ /* 2–3 días */
-  background:#2a1f0b !important;
-}
-.tableWrap table tbody tr.alert-red{    /* hoy/mañana/vencido */
-  background:#2a0b0b !important;
-}
-.tableWrap table tbody tr.ready td,
-.tableWrap table tbody tr.alert-orange td,
-.tableWrap table tbody tr.alert-red td{
+tbody tr.verde   { background: color-mix(in oklab, var(--verde) 20%, #000) !important; }
+tbody tr.celeste { background: color-mix(in oklab, var(--celeste) 18%, #000) !important; }
+tbody tr.amarillo{ background: color-mix(in oklab, var(--amarillo) 22%, #000) !important; }
+tbody tr.rojo    { background: color-mix(in oklab, var(--rojo) 22%, #000) !important; }
+tbody tr.gris    { background: color-mix(in oklab, var(--gris) 16%, #000) !important; }
+
+tbody tr.verde td,
+tbody tr.celeste td,
+tbody tr.amarillo td,
+tbody tr.rojo td,
+tbody tr.gris td{
   border-bottom-color: rgba(255,255,255,.06);
 }
 
