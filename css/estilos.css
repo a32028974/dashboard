@@ -153,3 +153,30 @@ tbody tr.gris td{
 @media (min-width: 860px){
   header{ grid-template-columns: 1fr auto; }
 }
+
+/* ===== Tabla clara ===== */
+.tableWrap {
+  background: #fff;        /* fondo contenedor */
+  border: 1px solid #ccc;
+}
+
+table {
+  background: #fff;
+  color: #000;
+}
+
+thead th {
+  background: #f2f2f2;     /* encabezado gris claro */
+  color: #000;
+  border-bottom: 1px solid #ccc;
+}
+
+tbody td {
+  background: #fff;
+  color: #000;
+  border-bottom: 1px solid #ddd;
+}
+
+tbody tr:nth-child(odd) { background: #fff; }
+tbody tr:nth-child(even){ background: #f9f9f9; }
+
