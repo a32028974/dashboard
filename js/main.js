@@ -3,7 +3,7 @@
 // ============================
 
 // <<< CAMBIAR SOLO ESTA LÍNEA SI TENÉS OTRO /exec >>>
-const API_URL = 'https://script.google.com/macros/s/AKfycby6SzAgXhtctDbYEGETB6Ku8X_atugp7Mld5QvimnDpXMmHU9IxW9XRqDkRI0rGONr85Q/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbybza1V9Om8MHI04iFBF4XM8I6am4QG3QOSr6tPnXV3vJwx5FhAzD21Iy8z6FJ1-3v3SQ/exec';
 
 const $ = (id) => document.getElementById(id);
 const logUI = (msg) => { const el = $('hint'); if (el) el.textContent = msg; };
