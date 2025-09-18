@@ -1,5 +1,5 @@
 // ============================
-// Tablero semáforo + Auto-Refresh + Recientes
+// Tablero semáforo + Auto-Refresh + Recientes + Pendientes arriba
 // ============================
 
 // <<< CAMBIAR SOLO ESTA LÍNEA SI TENÉS OTRO /exec >>>
@@ -68,7 +68,6 @@ let state = {
 window._state = state; // debug desde consola
 
 // ===== Mapear registros a columnas =====
-// C,B,D,F,G,K,AF,AG + A (estado)
 function normalizeRecord(r){
   const C  = toDMY(r.retira   ?? r.C  ?? r.c  ?? r.fechaRetira ?? r['Fecha retira'] ?? '');
   const B  = toDMY(r.fecha    ?? r.B  ?? r.b  ?? r.fechaEncargo ?? r['Fecha encargo'] ?? '');
@@ -76,8 +75,8 @@ function normalizeRecord(r){
   const F  = safe(r.nombre    ?? r.F  ?? r.f  ?? r['Apellido y Nombre'] ?? r.apellidoNombre ?? '');
   const G  = safe(r.cristal   ?? r.G  ?? r.g  ?? r['Cristal'] ?? '');
   const K  = safe(r.armazon   ?? r.K  ?? r.k  ?? r.detalle ?? r['Armazón'] ?? '');
-  const AF = safe(r.vendedor  ?? r.AF ?? r.af ?? r['Vendedor'] ?? '');
-  const AG = safe(r.telefono  ?? r.AG ?? r.ag ?? r.tel ?? r['Teléfono'] ?? '');
+  const AF = safe(r.vendedor  ?? r.AF ?? r.af  ?? r['Vendedor'] ?? '');
+  const AG = safe(r.telefono  ?? r.AG ?? r.ag  ?? r.tel ?? r['Teléfono'] ?? '');
 
   const estadoRaw = r.estado ?? r.Estado ?? r.status ?? r.STATUS ??
                     r.A ?? r.a ?? r.E ?? r.e ?? r['Estado'] ?? '';
@@ -93,27 +92,38 @@ function cmpDateStr(a,b){
   return A-B;
 }
 
-// ÚNICA función sortItems (no se redeclara)
+// ranking de urgencia: menor = más arriba
+function urgencyRank(it){
+  if (isListo(it.A))     return 5;             // LISTO al final
+  if (!isFinite(it._dLeft)) return 4;          // sin fecha
+  if (it._dLeft <= 0)    return 0;             // vencidos / hoy (ROJO)
+  if (it._dLeft <= 2)    return 1;             // muy próximos (AMARILLO)
+  return 2;                                     // resto (CELESTE)
+}
+
+// ÚNICA función sortItems
 function sortItems(){
-  const mode = $('sort')?.value || 'recientes_desc';
+  const mode = $('sort')?.value || 'pendientes';
 
   const by = {
-    recientes_desc: (a,b)=> (b._row||0) - (a._row||0), // más nuevos arriba
+    pendientes:   (a,b)=> urgencyRank(a) - urgencyRank(b)      // 1) urgencia
+                           || (a._dLeft - b._dLeft)            // 2) más vencido primero
+                           || ((b._row||0) - (a._row||0)),     // 3) más reciente del sheet
+    recientes_desc: (a,b)=> (b._row||0) - (a._row||0),
     recientes_asc:  (a,b)=> (a._row||0) - (b._row||0),
     retira_asc:     (a,b)=> cmpDateStr(a.C,b.C),
     retira_desc:    (a,b)=> cmpDateStr(b.C,a.C),
     encargo_asc:    (a,b)=> cmpDateStr(a.B,b.B),
     encargo_desc:   (a,b)=> cmpDateStr(b.B,a.B),
-  }[mode] || ((a,b)=> (b._row||0) - (a._row||0));
+  }[mode] || ((a,b)=> urgencyRank(a) - urgencyRank(b) || (a._dLeft - b._dLeft) || ((b._row||0) - (a._row||0)));
 
   state.items.sort(by);
 }
 
-// ===== Semáforo =====
+// ===== Semáforo (clases CSS) =====
 function rowClass(it){
   const dLeft  = it._dLeft;
   const estado = it.A;
-
   if (!isFinite(dLeft)) return 'gris';
   if (isListo(estado))  return 'verde';
   if (dLeft <= 0)       return 'rojo';
@@ -121,7 +131,7 @@ function rowClass(it){
   return 'celeste';
 }
 
-// ===== Hash rápido del dataset para evitar re-render si no cambió =====
+// ===== Hash para evitar re-render si no cambió =====
 function computeHash(arr){
   let s = arr.map(x => `${x.C}|${x.B}|${x.D}|${x.F}|${x.G}|${x.K}|${x.AF}|${x.AG}|${x.A}|${x._row||''}`).join('||');
   let h = 5381;
@@ -157,7 +167,6 @@ function render(){
   $('count') && ($('count').textContent = String(filtered.length));
   $('total') && ($('total').textContent = String(state.items.length));
   $('pageInfo') && ($('pageInfo').textContent = `Cargados: ${state.page}`);
-  // habilitar export si hay datos
   const btn = $('exportCsv'); if (btn) btn.disabled = filtered.length === 0;
 }
 
@@ -298,4 +307,4 @@ window.addEventListener('DOMContentLoaded', ()=>{
 });
 
 // ===== Debug helpers =====
-window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord, computeHash, updateFrom, getFiltered };
+window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord, computeHash, updateFrom, getFiltered, urgencyRank };
