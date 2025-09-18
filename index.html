@@ -14,7 +14,7 @@
       <div class="card">
         <div class="toolbar">
           <img src="logo.png" alt="Óptica Cristal" style="height:28px;border-radius:4px" />
-          <strong style="font-size:18px">📋 Lista de trabajos v1</strong>
+          <strong style="font-size:18px">📋 Lista de trabajos v2</strong>
           <span class="pill muted">tablero semáforo</span>
           <span class="spacer"></span>
           <div class="kpi" id="kpi">
@@ -48,7 +48,7 @@
             <option value="encargo_desc">Encargo ↓</option>
           </select>
           <span class="spacer"></span>
-          <button id="exportCsv" title="Exportar a CSV" class="ghost">⬇️ Exportar</button>
+          <button id="exportCsv" class="ghost" title="Exportar CSV" disabled>⬇️ Exportar</button>
         </div>
         <small class="muted">Tip: escribí y presioná Enter para filtrar. Con el scroll se cargan más.</small>
       </div>
@@ -63,9 +63,9 @@
             <th>N° Trabajo (D)</th>
             <th>Apellido y Nombre (F)</th>
             <th>Cristal (G)</th>
-            <th>Estado (K)</th>
-            <th>Seña (AF)</th>
-            <th>Saldo (AG)</th>
+            <th>Armazón (K)</th>
+            <th>Vendedor (AF)</th>
+            <th>Teléfono (AG)</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
