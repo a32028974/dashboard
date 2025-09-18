@@ -66,6 +66,9 @@ let state = {
   lastHash: ''
 };
 
+window._state = state; // <- para inspeccionarlo desde la consola
+
+
 // ===== Mapear registros a columnas =====
 // C,B,D,F,G,K,AF,AG + A (estado)
 function normalizeRecord(r){
@@ -192,6 +195,7 @@ async function cargar(){
     $('progress')?.classList.add('show');
     const q = $('q')?.value.trim() || '';
     const data = await fetchHistorial(state.page, q);
+    window._lastData = data; // <- crudo que vino del backend
     const mapped = data.map(normalizeRecord);
 
     // ordenar y render solo si cambió
