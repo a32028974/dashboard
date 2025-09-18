@@ -153,27 +153,33 @@ function render(){
   $('pageInfo') && ($('pageInfo').textContent = `Cargados: ${state.page}`);
 }
 
-// ===== FETCH con fallback =====
-// ---- FETCH preferente a "tablero" + filtro local ----
+// ---- FETCH preferente a "tablero" + recorte últimos N ----
 async function fetchHistorial(limit, query){
-  // 1) Traigo siempre el tablero (trae 'estado')
   const url = `${API_URL}?action=tablero`;
   logUI('Cargando… (tablero)');
   const r = await fetch(url, { cache:'no-store' });
   const json = await r.json();
   const arr = Array.isArray(json) ? json : (Array.isArray(json.items) ? json.items : []);
+  const total = arr.length;
 
-  // 2) Filtro local por query (si hay)
-  let out = arr;
-  if (query && query.trim()) {
-    const q = query.trim().toUpperCase();
-    out = arr.filter(o => (
+  let list = arr;
+  let base = 0; // fila inicial (0-based) dentro del sheet para el slice
+
+  // Filtro local por texto (si hay)
+  const q = (query || '').trim();
+  if (q) {
+    const Q = q.toUpperCase();
+    list = arr.filter(o => (
       `${o.numero ?? o.D ?? ''} ${o.nombre ?? o.F ?? ''} ${o.cristal ?? o.G ?? ''} ${o.armazon ?? o.K ?? ''} ${o.vendedor ?? o.AF ?? ''} ${o.telefono ?? o.AG ?? ''}`
-    ).toUpperCase().includes(q));
+    ).toUpperCase().includes(Q));
+    // cuando hay búsqueda no recortamos; si querés, cambiamos a list = list.slice(-limit);
+  } else {
+    // SIN búsqueda: me quedo con las ÚLTIMAS N filas del sheet
+    list = arr.slice(-Number(limit || 100));
+    base = total - list.length; // índice de la primera fila mostrada dentro del sheet
   }
 
-  // 3) Corto por 'limit'
-  return out.slice(0, Number(limit || 100));
+  return { list, base, total };
 }
 
 // ===== Cargar (manual o por auto-refresh) =====
@@ -181,12 +187,24 @@ async function cargar(){
   try{
     $('progress')?.classList.add('show');
     const q = $('q')?.value.trim() || '';
-    const data = await fetchHistorial(state.page, q);
-    window._lastData = data; // <- crudo que vino del backend
-    const mapped = data.map(normalizeRecord);
+    const { list, base, total } = await fetchHistorial(state.page, q);
 
-    // ordenar y render solo si cambió
-    sortItemsFrom(mapped);
+    // mapeo y adjunto número de fila del sheet (_row = 1-based)
+    const items = list.map((r, i) => {
+      const it = normalizeRecord(r);
+      it._row = base + i + 1;
+      return it;
+    });
+
+    state.items = items;
+    state.total = total;
+
+    sortItems();
+    render();
+
+    logUI(q
+      ? `OK. Coincidencias: ${state.items.length} / Total: ${total}`
+      : `OK. Mostrando últimos ${state.page} de ${total} (recientes primero)`);
   }catch(err){
     logUI(`Error: ${err.message}`);
     console.error(err);
@@ -195,18 +213,20 @@ async function cargar(){
   }
 }
 
-function sortItemsFrom(arr){
-  // calcular hash y evitar re-render si es igual
-  const h = computeHash(arr);
-  if (h === state.lastHash) {
-    logUI(`Sin cambios. Reg: ${state.items.length}`);
-    return;
-  }
-  state.items = arr;
-  state.lastHash = h;
-  sortItems();
-  render();
-  logUI(`OK. Registros: ${state.items.length}`);
+function sortItems(){
+  // si no hay selección, por defecto mostramos "recientes primero"
+  const mode = $('sort')?.value || 'recientes_desc';
+
+  const by = {
+    recientes_desc: (a,b)=> (b._row||0) - (a._row||0), // más nuevos arriba
+    recientes_asc:  (a,b)=> (a._row||0) - (b._row||0),
+    retira_asc:     (a,b)=> cmpDateStr(a.C,b.C),
+    retira_desc:    (a,b)=> cmpDateStr(b.C,a.C),
+    encargo_asc:    (a,b)=> cmpDateStr(a.B,b.B),
+    encargo_desc:   (a,b)=> cmpDateStr(b.B,a.B),
+  }[mode] || ((a,b)=> (b._row||0) - (a._row||0));
+
+  state.items.sort(by);
 }
 
 // ===== Auto-Refresh =====
