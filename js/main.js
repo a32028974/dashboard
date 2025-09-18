@@ -1,9 +1,13 @@
 // ============================
-// Tablero semáforo (robusto con diagnósticos)
+// Tablero semáforo + Auto-Refresh
 // ============================
 
 // <<< CAMBIAR SOLO ESTA LÍNEA SI TENÉS OTRO /exec >>>
 const API_URL = 'https://script.google.com/macros/s/AKfycbybza1V9Om8MHI04iFBF4XM8I6am4QG3QOSr6tPnXV3vJwx5FhAzD21Iy8z6FJ1-3v3SQ/exec';
+
+// ===== Config de actualización en tiempo real =====
+const REFRESH_MS = 15000;         // intervalo base 15s
+const REFRESH_MAX_MS = 60000;     // backoff máx 60s
 
 // ===== Helpers DOM / UI =====
 const $ = (id) => document.getElementById(id);
@@ -19,7 +23,7 @@ function parseAnyToDate(s){
   if (typeof s === 'number'){ const d=new Date(s); if(!isNaN(d)) { d.setHours(0,0,0,0); return d; } }
   const str=safe(s); if(!str) return null;
 
-  // dd/mm/aa, dd-mm-aa, dd/mm/aaaa...
+  // dd/mm/aa | dd-mm-aa | dd/mm/aaaa ...
   const m=str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if(m){
     let[,dd,mm,yy]=m;
@@ -28,41 +32,55 @@ function parseAnyToDate(s){
     d.setHours(0,0,0,0);
     return isNaN(d)?null:d;
   }
-  // fallback Date()
   const d=new Date(str);
   if(!isNaN(d)){ d.setHours(0,0,0,0); return d; }
   return null;
 }
-
 function toDMY(s){ const d=parseAnyToDate(s); return d?fmtDMY(d):''; }
 function daysUntil(s){ const d=parseAnyToDate(s); if(!d) return Infinity; return Math.floor((d - todayLocal())/86400000); }
 
 // ===== Normalización texto =====
-const norm = (s)=> safe(s)
+function cleanInvisible(s){
+  return safe(s)
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+const norm = (s)=> cleanInvisible(s)
   .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // sin acentos
   .toUpperCase();
 
 function isListo(estadoRaw){
   const e = norm(estadoRaw);
-  // lista de variantes comunes
-  return /^LISTO\b/.test(e) || e.includes('ENTREGADO');
+  return e.includes('LISTO') || e.includes('ENTREGADO');
 }
 
 // ===== Estado global =====
-let state = { items: [], total: 0, page: 100, query: '' };
+let state = {
+  items: [],
+  total: 0,
+  page: 100,
+  query: '',
+  timer: null,
+  backoff: REFRESH_MS,
+  lastHash: ''
+};
 
-// ===== Mapear registros a las columnas que usás en la tabla =====
+// ===== Mapear registros a columnas =====
 // C,B,D,F,G,K,AF,AG + A (estado)
 function normalizeRecord(r){
   const C  = toDMY(r.retira   ?? r.C  ?? r.c  ?? r.fechaRetira ?? r['Fecha retira'] ?? '');
   const B  = toDMY(r.fecha    ?? r.B  ?? r.b  ?? r.fechaEncargo ?? r['Fecha encargo'] ?? '');
-  const D  = safe(r.numero    ?? r.D  ?? r.d  ?? r['N° Trabajo'] ?? r.num ?? '');
-  const F  = safe(r.nombre    ?? r.F  ?? r.f  ?? r['Apellido y Nombre'] ?? '');
+  const D  = safe(r.numero    ?? r.D  ?? r.d  ?? r['N° Trabajo'] ?? r.num ?? r.numeroTrabajo ?? '');
+  const F  = safe(r.nombre    ?? r.F  ?? r.f  ?? r['Apellido y Nombre'] ?? r.apellidoNombre ?? '');
   const G  = safe(r.cristal   ?? r.G  ?? r.g  ?? r['Cristal'] ?? '');
   const K  = safe(r.armazon   ?? r.K  ?? r.k  ?? r.detalle ?? r['Armazón'] ?? '');
   const AF = safe(r.vendedor  ?? r.AF ?? r.af ?? r['Vendedor'] ?? '');
   const AG = safe(r.telefono  ?? r.AG ?? r.ag ?? r.tel ?? r['Teléfono'] ?? '');
-  const A  = safe(r.estado    ?? r.A  ?? r.a  ?? r['Estado'] ?? '');
+
+  const estadoRaw = r.estado ?? r.Estado ?? r.status ?? r.STATUS ??
+                    r.A ?? r.a ?? r.E ?? r.e ?? r['Estado'] ?? '';
+  const A = cleanInvisible(estadoRaw);
 
   return { A,B,C,D,F,G,K,AF,AG, _dLeft: daysUntil(C) };
 }
@@ -73,7 +91,6 @@ function cmpDateStr(a,b){
   const B = parseAnyToDate(b)?.getTime() ?? 9e15;
   return A-B;
 }
-
 function sortItems(){
   const mode = $('sort')?.value || 'retira_asc';
   const by = {
@@ -86,14 +103,8 @@ function sortItems(){
 }
 
 // ===== Semáforo =====
-// Regla pedida:
-//  - ROJO si Retira es hoy/ayer/antes y NO está LISTO
-//  - VERDE si LISTO
-//  - AMARILLO si faltan ≤2 días
-//  - CELESTE si faltan >2 días
-//  - GRIS si no hay fecha
 function rowClass(it){
-  const dLeft = it._dLeft;              // días hasta "retira" (neg/0 = vencido/hoy)
+  const dLeft  = it._dLeft;
   const estado = it.A;
 
   if (!isFinite(dLeft)) return 'gris';
@@ -101,6 +112,16 @@ function rowClass(it){
   if (dLeft <= 0)       return 'rojo';
   if (dLeft <= 2)       return 'amarillo';
   return 'celeste';
+}
+
+// ===== Hash rápido del dataset para evitar re-render si no cambió =====
+function computeHash(arr){
+  // solo campos clave para estabilidad
+  let s = arr.map(x => `${x.C}|${x.B}|${x.D}|${x.F}|${x.G}|${x.K}|${x.AF}|${x.AG}|${x.A}`).join('||');
+  // djb2
+  let h = 5381;
+  for (let i=0;i<s.length;i++) h = ((h<<5)+h) ^ s.charCodeAt(i);
+  return (h>>>0).toString(36);
 }
 
 // ===== Render =====
@@ -137,7 +158,7 @@ async function fetchHistorial(limit, query){
   else       { qp.set('histUltimos', String(limit)); }
   const url1 = `${API_URL}?${qp.toString()}`;
 
-  // 2) formato nuevo: action=tablero (si tu Apps Script lo soporta)
+  // 2) formato nuevo: action=tablero
   const url2 = `${API_URL}?action=tablero`;
 
   try {
@@ -165,17 +186,16 @@ async function fetchHistorial(limit, query){
   }
 }
 
-// ===== Cargar =====
+// ===== Cargar (manual o por auto-refresh) =====
 async function cargar(){
   try{
     $('progress')?.classList.add('show');
     const q = $('q')?.value.trim() || '';
     const data = await fetchHistorial(state.page, q);
+    const mapped = data.map(normalizeRecord);
 
-    state.items = data.map(normalizeRecord);
-    sortItems();
-    render();
-    logUI(`OK. Registros: ${state.items.length}`);
+    // ordenar y render solo si cambió
+    sortItemsFrom(mapped);
   }catch(err){
     logUI(`Error: ${err.message}`);
     console.error(err);
@@ -184,6 +204,60 @@ async function cargar(){
   }
 }
 
+function sortItemsFrom(arr){
+  // calcular hash y evitar re-render si es igual
+  const h = computeHash(arr);
+  if (h === state.lastHash) {
+    logUI(`Sin cambios. Reg: ${state.items.length}`);
+    return;
+  }
+  state.items = arr;
+  state.lastHash = h;
+  sortItems();
+  render();
+  logUI(`OK. Registros: ${state.items.length}`);
+}
+
+// ===== Auto-Refresh =====
+function scheduleNextRefresh(ok){
+  if (ok) state.backoff = REFRESH_MS;
+  else state.backoff = Math.min(REFRESH_MAX_MS, state.backoff * 2);
+
+  clearTimeout(state.timer);
+  state.timer = setTimeout(tick, state.backoff);
+}
+
+async function tick(){
+  // no refrescar si la pestaña está oculta (ahorra cuotas)
+  if (document.hidden) { scheduleNextRefresh(true); return; }
+
+  try{
+    const q = $('q')?.value.trim() || '';
+    const data = await fetchHistorial(state.page, q);
+    sortItemsFrom(data.map(normalizeRecord));
+    scheduleNextRefresh(true);
+  }catch(err){
+    console.error('Auto-refresh error:', err);
+    logUI(`Reintentando en ${Math.round(state.backoff/1000)}s…`);
+    scheduleNextRefresh(false);
+  }
+}
+
+function startAutoRefresh(){
+  clearTimeout(state.timer);
+  state.backoff = REFRESH_MS;
+  scheduleNextRefresh(true);
+}
+
+// Pausar cuando no está visible
+document.addEventListener('visibilitychange', ()=>{
+  if (document.hidden) {
+    clearTimeout(state.timer);
+  } else {
+    startAutoRefresh();
+  }
+});
+
 // ===== Eventos =====
 $('btnLoad')  ?.addEventListener('click', cargar);
 $('btnClear') ?.addEventListener('click', ()=>{ const iq=$('q'); if(iq) iq.value=''; cargar(); });
@@ -191,13 +265,13 @@ $('sort')     ?.addEventListener('change', ()=>{ sortItems(); render(); });
 $('limit')    ?.addEventListener('change', (e)=>{ state.page = Number(e.target.value||100); cargar(); });
 $('q')        ?.addEventListener('keyup', (e)=>{ if(e.key==='Enter') cargar(); });
 
-// ===== Auto-load al abrir =====
+// ===== Init =====
 window.addEventListener('DOMContentLoaded', ()=>{
   state.page = Number($('limit')?.value || 100);
-  logUI('Listo. Hacé clic en Cargar.');
-  // Si querés auto-cargar al abrir, descomentá:
-  // cargar();
+  logUI('Listo. Clic en Cargar o esperá la sincronización…');
+  cargar();             // primera carga
+  startAutoRefresh();   // y arranca el “tiempo real”
 });
 
-// ===== Debug en consola =====
-window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord };
+// ===== Debug =====
+window._debug = { cargar, fetchHistorial, parseAnyToDate, daysUntil, rowClass, normalizeRecord, computeHash };
