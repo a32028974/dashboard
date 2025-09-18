@@ -13,17 +13,18 @@
     <header>
       <div class="card">
         <div class="toolbar">
+          <img src="logo.png" alt="Óptica Cristal" style="height:28px;border-radius:4px" />
           <strong style="font-size:18px">📋 Lista de trabajos</strong>
-          <span class="pill muted">scroll infinito v 2</span>
+          <span class="pill muted">tablero semáforo</span>
           <span class="spacer"></span>
           <div class="kpi" id="kpi">
             <span>Mostrando <b id="count">0</b> de <b id="total">—</b></span>
           </div>
         </div>
         <div class="toolbar" style="margin-top:8px">
-          <input id="q" class="grow" placeholder="Buscar por N° trabajo, DNI, nombre o detalle…" />
+          <input id="q" class="grow" placeholder="Buscar por N° trabajo, DNI o nombre…" />
           <select id="limit">
-            <option value="100">100</option>
+            <option value="100" selected>100</option>
             <option value="200">200</option>
             <option value="500">500</option>
             <option value="1000">1000</option>
@@ -41,15 +42,15 @@
         <div class="toolbar">
           <label class="muted">Orden:</label>
           <select id="sort">
-            <option value="fecha_desc">Fecha ↓ (recientes primero)</option>
-            <option value="fecha_asc">Fecha ↑ (antiguos primero)</option>
-            <option value="num_desc">N° trabajo ↓</option>
-            <option value="num_asc">N° trabajo ↑</option>
+            <option value="retira_asc">Retira ↑</option>
+            <option value="retira_desc">Retira ↓</option>
+            <option value="encargo_asc">Encargo ↑</option>
+            <option value="encargo_desc">Encargo ↓</option>
           </select>
           <span class="spacer"></span>
           <button id="exportCsv" title="Exportar a CSV" class="ghost">⬇️ Exportar</button>
         </div>
-        <small class="muted">Tip: podés escribir y presionar Enter para filtrar. Con el scroll se cargan más.</small>
+        <small class="muted">Tip: escribí y presioná Enter para filtrar. Con el scroll se cargan más.</small>
       </div>
     </header>
 
@@ -57,10 +58,14 @@
       <table>
         <thead>
           <tr>
-            <th>Fecha</th><th>N°</th><th>Paciente</th><th>DNI</th>
-            <th>Teléfono</th><th>Armazón</th><th>Cristal</th>
-            <th>Total</th><th>Seña</th><th>Saldo</th>
-            <th>Estado</th><th>Retira</th><th>Vendedor</th>
+            <th>Fecha retira (C)</th>
+            <th>Fecha encargo (B)</th>
+            <th>N° Trabajo (D)</th>
+            <th>Apellido y Nombre (F)</th>
+            <th>Cristal (G)</th>
+            <th>Estado (K)</th>
+            <th>Seña (AF)</th>
+            <th>Saldo (AG)</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
