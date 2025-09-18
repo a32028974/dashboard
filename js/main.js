@@ -154,39 +154,26 @@ function render(){
 }
 
 // ===== FETCH con fallback =====
+// ---- FETCH preferente a "tablero" + filtro local ----
 async function fetchHistorial(limit, query){
-  // 1) formato viejo: histUltimos / histBuscar
-  const qp = new URLSearchParams();
-  if (query) { qp.set('histBuscar', query); qp.set('limit', String(limit)); }
-  else       { qp.set('histUltimos', String(limit)); }
-  const url1 = `${API_URL}?${qp.toString()}`;
+  // 1) Traigo siempre el tablero (trae 'estado')
+  const url = `${API_URL}?action=tablero`;
+  logUI('Cargando… (tablero)');
+  const r = await fetch(url, { cache:'no-store' });
+  const json = await r.json();
+  const arr = Array.isArray(json) ? json : (Array.isArray(json.items) ? json.items : []);
 
-  // 2) formato nuevo: action=tablero
-  const url2 = `${API_URL}?action=tablero`;
-
-  try {
-    logUI('Cargando… (formato historial)');
-    const r1 = await fetch(url1, { cache:'no-store' });
-    const t1 = await r1.text();
-    try {
-      const j1 = JSON.parse(t1);
-      const arr = Array.isArray(j1) ? j1 : (Array.isArray(j1.items) ? j1.items : []);
-      if (arr.length) return arr;
-      console.warn('Historial vacío, pruebo "tablero"');
-    } catch(parseErr){
-      console.warn('No pude parsear historial:', parseErr);
-    }
-  } catch(e){ console.warn('Fallo historial:', e); }
-
-  try {
-    logUI('Cargando… (formato tablero)');
-    const r2 = await fetch(url2, { cache:'no-store' });
-    const j2 = await r2.json();
-    const arr2 = Array.isArray(j2) ? j2 : (Array.isArray(j2.items) ? j2.items : []);
-    return arr2;
-  } catch(e2){
-    throw new Error('No pude cargar datos (historial ni tablero).');
+  // 2) Filtro local por query (si hay)
+  let out = arr;
+  if (query && query.trim()) {
+    const q = query.trim().toUpperCase();
+    out = arr.filter(o => (
+      `${o.numero ?? o.D ?? ''} ${o.nombre ?? o.F ?? ''} ${o.cristal ?? o.G ?? ''} ${o.armazon ?? o.K ?? ''} ${o.vendedor ?? o.AF ?? ''} ${o.telefono ?? o.AG ?? ''}`
+    ).toUpperCase().includes(q));
   }
+
+  // 3) Corto por 'limit'
+  return out.slice(0, Number(limit || 100));
 }
 
 // ===== Cargar (manual o por auto-refresh) =====
