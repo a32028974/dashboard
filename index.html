@@ -14,7 +14,7 @@
       <div class="card">
         <div class="toolbar">
           <img src="logo.png" alt="Óptica Cristal" style="height:28px;border-radius:4px" />
-          <strong style="font-size:18px">📋 Lista de trabajos v1</strong>
+          <strong style="font-size:18px">📋 Lista de trabajos</strong>
           <span class="pill muted">tablero semáforo</span>
           <span class="spacer"></span>
           <div class="kpi" id="kpi">
@@ -44,7 +44,8 @@
         <div class="toolbar">
           <label class="muted">Orden:</label>
           <select id="sort">
-            <option value="recientes_desc" selected>Recientes primero</option>
+            <option value="pendientes" selected>Pendientes arriba</option>
+            <option value="recientes_desc">Recientes primero</option>
             <option value="recientes_asc">Recientes abajo</option>
             <option value="retira_asc">Retira ↑</option>
             <option value="retira_desc">Retira ↓</option>
@@ -54,7 +55,9 @@
           <span class="spacer"></span>
           <button id="exportCsv" class="ghost" title="Exportar CSV" disabled>⬇️ Exportar</button>
         </div>
-        <small class="muted">Tip: sin búsqueda se ven los <b>últimos N</b> del Sheet; con búsqueda, se muestran todas las coincidencias.</small>
+        <small class="muted">
+          Sin búsqueda: se ven los <b>últimos N</b> del Sheet. Con búsqueda: se muestran todas las coincidencias.
+        </small>
       </div>
     </header>
 
