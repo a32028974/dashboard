@@ -1,37 +1,34 @@
 // ============================
-// Óptica Cristal – Dashboard
-// main.js (consumo de histUltimos/histBuscar)
+// Óptica Cristal – Tablero Semáforo (8 columnas)
 // ============================
 
-// PONÉ ACÁ tu URL /exec de la COPIA publicada:
-const API_URL = 'https://script.google.com/macros/s/AKfycbxoQMhgtwTxMT0xRjlVMwLw63FZbs_dFLJyEWtl--oa4MQVN21LjirUJc9MYfgW20sZRg/exec';
+// PONÉ ACA tu /exec vigente de "Carga de trabajos"
+const API_URL = 'https://script.google.com/macros/s/AKfycby6SzAgXhtctDbYEGETB6Ku8X_atugp7Mld5QvimnDpXMmHU9IxW9XRqDkRI0rGONr85Q/exec';
 
-// ---- helpers
 const $ = (id) => document.getElementById(id);
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); } };
-const todayLocal = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
+const todayLocal = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
 const safe = (v) => (v??'').toString().trim();
 
-function parseDateDMY(str){
-  const s = (str||'').trim(); if(!s) return null;
+function parseDMY(s){
+  s = safe(s); if(!s) return null;
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if(!m) return null;
-  let dd=+m[1], mm=+m[2], yy=+m[3]; if(yy<100) yy+=2000;
-  const d = new Date(yy, mm-1, dd, 0,0,0,0);
-  return Number.isNaN(d.getTime()) ? null : d;
+  let [_, dd, mm, yy] = m; if(yy.length===2) yy='20'+yy;
+  const d = new Date(+yy, +mm-1, +dd); d.setHours(0,0,0,0);
+  return isNaN(d) ? null : d;
 }
 function daysUntil(dateStr){
-  const d = parseDateDMY(dateStr); if(!d) return Number.POSITIVE_INFINITY;
+  const d = parseDMY(dateStr); if(!d) return Number.POSITIVE_INFINITY;
   const base = todayLocal();
-  const ms = d.getTime() - base.getTime();
-  return Math.floor(ms / 86400000);
+  return Math.floor((d - base)/86400000);
 }
 function isReady(estado){ return /\bLISTO\b/i.test(String(estado||'')); }
 
-// ---- estado
+// === estado
 let state = { items:[], total:0, limitLoaded:0, pageStep:100, query:'', loading:false };
 
-// ---- URL
+// === URL (compat: histUltimos / histBuscar)
 function buildURL(){
   const qp = new URLSearchParams();
   if(state.query){
@@ -43,126 +40,111 @@ function buildURL(){
   return API_URL + '?' + qp.toString();
 }
 
-// ---- fetch
+// === fetch
 async function fetchTrabajos(){
   if(state.loading) return;
   state.loading = true; toggleProgress(true);
   try{
-    const url = buildURL();
-    const res = await fetch(url, { method:'GET', cache:'no-store' });
+    const res = await fetch(buildURL(), { cache:'no-store' });
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
-    const items = Array.isArray(data) ? data : (Array.isArray(data.items)?data.items:[]);
-    state.items = items.map(mapFromAPI);
-    state.total  = items.length;
+    const arr = Array.isArray(data) ? data : (Array.isArray(data.items)?data.items:[]);
+    // Mapeo a tus 8 columnas con equivalencias:
+    // C = retira, B = fecha (encarga), D = numero, F = nombre,
+    // G = cristal, K = estado, AF = sena, AG = saldo
+    state.items = arr.map(it => ({
+      C: safe(it.retira),
+      B: safe(it.fecha),
+      D: safe(it.numero),
+      F: safe(it.nombre),
+      G: safe(it.cristal),
+      K: safe(it.estado),
+      AF: safe(it.sena || ''),
+      AG: safe(it.saldo || ''),
+
+      dLeft: daysUntil(it.retira),
+      ready: isReady(it.estado)
+    }));
+    state.total = state.items.length;
     sortItems();
     render();
-  }catch(err){
-    console.error('[fetchTrabajos] error', err);
+  }catch(e){
+    console.error(e);
     $('hint').textContent = 'No pude cargar los trabajos. Revisá la consola.';
   }finally{
-    state.loading = false; toggleProgress(false);
+    state.loading=false; toggleProgress(false);
   }
 }
 
-// ---- mapeo
-function mapFromAPI(it){
-  return {
-    estado: safe(it.estado),
-    fecha:  safe(it.fecha),           // FECHA QUE ENCARGA
-    retira: safe(it.retira),          // FECHA QUE RETIRA
-    numero: safe(it.numero),          // NUMERO DE TRABAJO
-    dni:    safe(it.dni),             // DOCUMENTO
-    nombre: safe(it.nombre),          // APELLIDO Y NOMBRE
-    cristal:safe(it.cristal),         // CRISTAL
-    vendedor: safe(it.vendedor),      // VENDEDOR
-    telefono: safe(it.telefono),      // TELEFONO
-
-    // opcionales (no están en tu hoja hoy)
-    det_armazon: safe(it.det_armazon || ''),
-    total: safe(it.total || ''),
-    sena:  safe(it.sena  || ''),
-    saldo: safe(it.saldo || ''),
-    pdf:   safe(it.pdf   || ''),
-
-    dLeft: daysUntil(it.retira),
-    ready: isReady(it.estado)
-  };
-}
-
-// ---- orden
+// === orden
 function sortItems(){
-  state.items.sort((a,b)=>{
-    if(a.ready !== b.ready) return a.ready ? 1 : -1;
-    const da = a.dLeft, db = b.dLeft;
-    return (da - db) || cmpDate(a.retira, b.retira) || cmpStr(a.numero, b.numero);
-  });
+  const mode = $('sort').value;
+  const by = {
+    retira_asc:  (a,b)=> cmpDate(a.C,b.C),
+    retira_desc: (a,b)=> cmpDate(b.C,a.C),
+    encargo_asc: (a,b)=> cmpDate(a.B,b.B),
+    encargo_desc:(a,b)=> cmpDate(b.B,a.B),
+  }[mode] || ((a,b)=> (a.dLeft - b.dLeft));
+  state.items.sort(by);
 }
-function cmpStr(a,b){ return String(a).localeCompare(String(b), 'es'); }
 function cmpDate(a,b){
-  const da = parseDateDMY(a)?.getTime() ?? 9e15;
-  const db = parseDateDMY(b)?.getTime() ?? 9e15;
-  return da - db;
+  const A = parseDMY(a)?.getTime() ?? 9e15;
+  const B = parseDMY(b)?.getTime() ?? 9e15;
+  return A - B;
 }
 
-// ---- render + semáforo por fecha/estado
+// === semáforo
 function rowClass(it){
-  if(it.ready) return 'ready';
+  if (it.ready) return 'verde';
   const d = it.dLeft;
-  if (d <= 1) return 'alert-red';
-  if (d <= 3) return 'alert-orange';
-  return '';
-}
-function badgeTexto(it){
-  if(it.ready) return 'LISTO';
-  const d = it.dLeft;
-  if (!isFinite(d)) return '';
-  if (d < 0) return `VENCIDO ${Math.abs(d)}d`;
-  if (d === 0) return 'HOY';
-  if (d === 1) return 'MAÑANA';
-  return `EN ${d}d`;
+  if (!isFinite(d)) return 'gris';
+  if (d <= 0) return 'rojo';        // hoy o vencido
+  if (d <= 2) return 'amarillo';    // 1–2 días
+  return 'celeste';                 // 3+ días
 }
 
+// === render
 function render(){
   const tbody = $('tbody'); tbody.innerHTML = '';
-  for(const it of state.items){
+  const q = $('q').value.trim().toUpperCase();
+  const filtered = q
+    ? state.items.filter(x =>
+        (x.D+x.F+x.G).toUpperCase().includes(q) || String(x.D).includes(q))
+    : state.items;
+
+  for(const it of filtered){
     const tr = document.createElement('tr');
     tr.className = rowClass(it);
-    const badge = badgeTexto(it);
     tr.innerHTML = `
-      <td class="mono">${safe(it.fecha)}</td>
-      <td class="mono">${safe(it.numero)}</td>
-      <td>${safe(it.nombre)}</td>
-      <td class="mono">${safe(it.dni)}</td>
-      <td class="mono">${safe(it.telefono)}</td>
-      <td>${safe(it.det_armazon)}</td>
-      <td>${safe(it.cristal)}</td>
-      <td class="right mono">${safe(it.total)}</td>
-      <td class="right mono">${safe(it.sena)}</td>
-      <td class="right mono">${safe(it.saldo)}</td>
-      <td><span class="state ${it.ready ? 'OK' : (it.dLeft<=1?'PEND':'LAB')}">${safe(it.estado|| (it.ready?'LISTO':'PEND.'))}</span></td>
-      <td class="mono">${safe(it.retira)} ${badge?`<span class="pill" style="margin-left:6px">${badge}</span>`:''}</td>
-      <td>${safe(it.vendedor)}</td>
+      <td class="mono">${it.C||''}</td>
+      <td class="mono">${it.B||''}</td>
+      <td class="mono"><strong>${it.D||''}</strong></td>
+      <td>${it.F||''}</td>
+      <td>${it.G||''}</td>
+      <td>${it.K||''}</td>
+      <td class="right mono">${it.AF||''}</td>
+      <td class="right mono">${it.AG||''}</td>
     `;
     tr.title = 'Click para copiar N° de trabajo';
-    tr.addEventListener('click', ()=> navigator.clipboard?.writeText(String(it.numero||'')));
+    tr.addEventListener('click', ()=> navigator.clipboard?.writeText(String(it.D||'')));
     tbody.appendChild(tr);
   }
-  $('count').textContent = String(state.items.length);
-  $('total').textContent = state.total ? String(state.total) : '—';
+  $('count').textContent = String(filtered.length);
+  $('total').textContent = String(state.total||'—');
   $('pageInfo').textContent = `Cargados: ${state.limitLoaded}`;
 }
 
-// ---- UI
+// === UI
 const toggleProgress = (on)=> $('progress').classList.toggle('show', !!on);
 $('btnLoad').addEventListener('click', ()=>{ state.query=$('q').value.trim(); resetAndLoad(); });
 $('btnClear').addEventListener('click', ()=>{ $('q').value=''; state.query=''; resetAndLoad(); });
 $('limit').addEventListener('change', ()=>{ state.pageStep = Number($('limit').value||100); resetAndLoad(); });
-$('sort').addEventListener('change', ()=>{ render(); });
+$('sort').addEventListener('change', ()=>{ sortItems(); render(); });
 $('q').addEventListener('keyup', (e)=>{ if(e.key==='Enter'){ state.query=$('q').value.trim(); resetAndLoad(); } });
 
 function resetAndLoad(){ state.limitLoaded = state.pageStep; fetchTrabajos(); }
 
+// scroll infinito
 document.getElementById('scroller').addEventListener('scroll', debounce(()=>{
   const el = document.getElementById('scroller');
   if (state.loading) return;
