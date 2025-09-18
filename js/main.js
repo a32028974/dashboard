@@ -1,34 +1,65 @@
 // ============================
-// Óptica Cristal – Tablero Semáforo (8 columnas)
+// Óptica Cristal – Tablero Semáforo (C,B,D,F,G,K,AF,AG) + A (LISTO)
 // ============================
 
-// PONÉ ACA tu /exec vigente de "Carga de trabajos"
-const API_URL = 'https://script.google.com/macros/s/AKfycbzagB_jZ7niXARSbnqCVfZp3e6X9oMxSlO-u-zJCfReguIe2cXf63uZFIpSSdBvMi86rA/exec';
+// 🔗 PONÉ ACA tu /exec vigente (el que estás usando para historial)
+const API_URL = 'https://script.google.com/macros/s/AKfycby6SzAgXhtctDbYEGETB6Ku8X_atugp7Mld5QvimnDpXMmHU9IxW9XRqDkRI0rGONr85Q/exec';
 
 const $ = (id) => document.getElementById(id);
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); } };
 const todayLocal = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
 const safe = (v) => (v??'').toString().trim();
 
-function parseDMY(s){
-  s = safe(s); if(!s) return null;
-  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if(!m) return null;
-  let [_, dd, mm, yy] = m; if(yy.length===2) yy='20'+yy;
-  const d = new Date(+yy, +mm-1, +dd); d.setHours(0,0,0,0);
-  return isNaN(d) ? null : d;
+// ====== Fechas ======
+function fmtDMY(date){
+  // dd/mm/aaaa
+  const dd = String(date.getDate()).padStart(2,'0');
+  const mm = String(date.getMonth()+1).padStart(2,'0');
+  const yy = date.getFullYear();
+  return `${dd}/${mm}/${yy}`;
 }
-function daysUntil(dateStr){
-  const d = parseDMY(dateStr); if(!d) return Number.POSITIVE_INFINITY;
-  const base = todayLocal();
-  return Math.floor((d - base)/86400000);
+function parseAnyToDate(s){
+  if (s == null || s === '') return null;
+  if (s instanceof Date && !isNaN(s)) return new Date(s.getTime());
+  const t = typeof s;
+  if (t === 'number') { // serial/epoch
+    const d = new Date(s); if(!isNaN(d)) { d.setHours(0,0,0,0); return d; }
+  }
+  // strings: "17/09/2025" o "Wed Sep 24 2025 00:00:00 GMT-0300 ..."
+  const str = String(s).trim();
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [_, dd, mm, yy] = m; if(yy.length===2) yy = '20'+yy;
+    const d = new Date(+yy, +mm-1, +dd); d.setHours(0,0,0,0);
+    return isNaN(d) ? null : d;
+  }
+  const d = new Date(str);
+  if (!isNaN(d)) { d.setHours(0,0,0,0); return d; }
+  return null;
 }
-function isReady(estado){ return /\bLISTO\b/i.test(String(estado||'')); }
+function toDMY(s){
+  const d = parseAnyToDate(s);
+  return d ? fmtDMY(d) : '';
+}
+function daysUntil(s){
+  const d = parseAnyToDate(s);
+  if (!d) return Number.POSITIVE_INFINITY;
+  return Math.floor((d.getTime() - todayLocal().getTime())/86400000);
+}
 
-// === estado
+// ====== Semáforo ======
+function rowClass(item){
+  if (/\bLISTO\b/i.test(item.A)) return 'verde'; // columna A manda
+  const d = item._dLeft;
+  if (!isFinite(d)) return 'gris';
+  if (d <= 0) return 'rojo';     // hoy o vencido
+  if (d <= 2) return 'amarillo'; // 1–2 días
+  return 'celeste';              // 3+ días
+}
+
+// ====== Estado global ======
 let state = { items:[], total:0, limitLoaded:0, pageStep:100, query:'', loading:false };
 
-// === URL (compat: histUltimos / histBuscar)
 function buildURL(){
   const qp = new URLSearchParams();
   if(state.query){
@@ -40,7 +71,33 @@ function buildURL(){
   return API_URL + '?' + qp.toString();
 }
 
-// === fetch
+// Mapeamos a tus columnas destino, admitiendo distintos nombres del backend
+function normalizeRecord(r){
+  // Fechas
+  const C = toDMY(r.retira ?? r.C ?? r.c ?? r.fechaRetira ?? '');
+  const B = toDMY(r.fecha  ?? r.B ?? r.b ?? r.fechaEncargo ?? '');
+
+  // Campos directos
+  const D = safe(r.numero   ?? r.D ?? r.d ?? '');
+  const F = safe(r.nombre   ?? r.F ?? r.f ?? '');
+  const G = safe(r.cristal  ?? r.G ?? r.g ?? '');
+
+  // Reasignación que pediste:
+  // K = Armazón, AF = Vendedor, AG = Teléfono
+  const K  = safe(r.armazon  ?? r.K  ?? r.k  ?? r.detalle ?? '');
+  const AF = safe(r.vendedor ?? r.AF ?? r.af ?? '');
+  const AG = safe(r.telefono ?? r.AG ?? r.ag ?? r.tel ?? '');
+
+  // Columna A (LISTO / vacío)
+  const A = safe(r.estado ?? r.A ?? r.a ?? '');
+
+  return {
+    A, B, C, D, F, G, K, AF, AG,
+    _dLeft: daysUntil(C)
+  };
+}
+
+// ====== Fetch ======
 async function fetchTrabajos(){
   if(state.loading) return;
   state.loading = true; toggleProgress(true);
@@ -49,22 +106,7 @@ async function fetchTrabajos(){
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
     const arr = Array.isArray(data) ? data : (Array.isArray(data.items)?data.items:[]);
-    // Mapeo a tus 8 columnas con equivalencias:
-    // C = retira, B = fecha (encarga), D = numero, F = nombre,
-    // G = cristal, K = estado, AF = sena, AG = saldo
-    state.items = arr.map(it => ({
-      C: safe(it.retira),
-      B: safe(it.fecha),
-      D: safe(it.numero),
-      F: safe(it.nombre),
-      G: safe(it.cristal),
-      K: safe(it.estado),
-      AF: safe(it.sena || ''),
-      AG: safe(it.saldo || ''),
-
-      dLeft: daysUntil(it.retira),
-      ready: isReady(it.estado)
-    }));
+    state.items = arr.map(normalizeRecord);
     state.total = state.items.length;
     sortItems();
     render();
@@ -76,54 +118,43 @@ async function fetchTrabajos(){
   }
 }
 
-// === orden
+// ====== Orden ======
+function cmpDateStr(da, db){
+  const A = parseAnyToDate(da)?.getTime() ?? 9e15;
+  const B = parseAnyToDate(db)?.getTime() ?? 9e15;
+  return A - B;
+}
 function sortItems(){
   const mode = $('sort').value;
   const by = {
-    retira_asc:  (a,b)=> cmpDate(a.C,b.C),
-    retira_desc: (a,b)=> cmpDate(b.C,a.C),
-    encargo_asc: (a,b)=> cmpDate(a.B,b.B),
-    encargo_desc:(a,b)=> cmpDate(b.B,a.B),
-  }[mode] || ((a,b)=> (a.dLeft - b.dLeft));
+    retira_asc:  (a,b)=> cmpDateStr(a.C,b.C),
+    retira_desc: (a,b)=> cmpDateStr(b.C,a.C),
+    encargo_asc: (a,b)=> cmpDateStr(a.B,b.B),
+    encargo_desc:(a,b)=> cmpDateStr(b.B,a.B),
+  }[mode] || ((a,b)=> (a._dLeft - b._dLeft));
   state.items.sort(by);
 }
-function cmpDate(a,b){
-  const A = parseDMY(a)?.getTime() ?? 9e15;
-  const B = parseDMY(b)?.getTime() ?? 9e15;
-  return A - B;
-}
 
-// === semáforo
-function rowClass(it){
-  if (it.ready) return 'verde';
-  const d = it.dLeft;
-  if (!isFinite(d)) return 'gris';
-  if (d <= 0) return 'rojo';        // hoy o vencido
-  if (d <= 2) return 'amarillo';    // 1–2 días
-  return 'celeste';                 // 3+ días
-}
-
-// === render
+// ====== Render ======
 function render(){
   const tbody = $('tbody'); tbody.innerHTML = '';
   const q = $('q').value.trim().toUpperCase();
   const filtered = q
-    ? state.items.filter(x =>
-        (x.D+x.F+x.G).toUpperCase().includes(q) || String(x.D).includes(q))
+    ? state.items.filter(x => (`${x.D} ${x.F} ${x.G} ${x.K} ${x.AF} ${x.AG}`).toUpperCase().includes(q))
     : state.items;
 
   for(const it of filtered){
     const tr = document.createElement('tr');
     tr.className = rowClass(it);
     tr.innerHTML = `
-      <td class="mono">${it.C||''}</td>
-      <td class="mono">${it.B||''}</td>
-      <td class="mono"><strong>${it.D||''}</strong></td>
-      <td>${it.F||''}</td>
-      <td>${it.G||''}</td>
-      <td>${it.K||''}</td>
-      <td class="right mono">${it.AF||''}</td>
-      <td class="right mono">${it.AG||''}</td>
+      <td class="mono">${it.C}</td>
+      <td class="mono">${it.B}</td>
+      <td class="mono"><strong>${it.D}</strong></td>
+      <td>${it.F}</td>
+      <td>${it.G}</td>
+      <td>${it.K}</td>
+      <td>${it.AF}</td>
+      <td class="mono">${it.AG}</td>
     `;
     tr.title = 'Click para copiar N° de trabajo';
     tr.addEventListener('click', ()=> navigator.clipboard?.writeText(String(it.D||'')));
@@ -134,7 +165,7 @@ function render(){
   $('pageInfo').textContent = `Cargados: ${state.limitLoaded}`;
 }
 
-// === UI
+// ====== UI ======
 const toggleProgress = (on)=> $('progress').classList.toggle('show', !!on);
 $('btnLoad').addEventListener('click', ()=>{ state.query=$('q').value.trim(); resetAndLoad(); });
 $('btnClear').addEventListener('click', ()=>{ $('q').value=''; state.query=''; resetAndLoad(); });
